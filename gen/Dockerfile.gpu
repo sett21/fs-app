@@ -51,7 +51,7 @@ WORKDIR /app
 #   ./gen/server.py
 #   ./gen/pipeline.py
 #   ./gen/models/inswapper_128.onnx (монтируется томом/копируется отдельно)
-COPY gen/ /app/
+COPY . /app/
 
 # Порт REST API
 EXPOSE 8081
