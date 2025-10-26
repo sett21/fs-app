@@ -5,28 +5,35 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1
 
-# Базовые зависимости
+# Базовые либы + инструменты сборки для C/C++ (нужны insightface/mediapipe)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-dev \
     git curl ca-certificates \
-    libglib2.0-0 libsm6 libxext6 libxrender1 libgl1 && \
-    rm -rf /var/lib/apt/lists/*
+    libglib2.0-0 libsm6 libxext6 libxrender1 libgl1 \
+    build-essential cmake \
+    && rm -rf /var/lib/apt/lists/*
 
+# Совместимые версии pip
 RUN python3 -m pip install --upgrade pip
 
-# 1) Всё с PyPI (без индекса torch)
+# Инструменты сборки python-пакетов (до insightface!)
+RUN pip3 install --no-cache-dir \
+    setuptools wheel scikit-build cython
+
+# 1) Всё из PyPI, что не зависит от CUDA-индекса
 RUN pip3 install --no-cache-dir \
     fastapi==0.115.0 uvicorn[standard]==0.30.6 \
-    pillow==10.4.0 \
-    numpy==1.26.4 \
+    pillow==10.4.0 numpy==1.26.4 \
     opencv-python-headless==4.10.0.84 \
     mediapipe==0.10.14 \
     onnxruntime-gpu==1.18.0 \
-    insightface==0.7.3 \
     diffusers==0.30.0 transformers==4.44.2 accelerate==0.34.2 \
     protobuf==4.25.3
 
-# 2) Torch/vision/xformers — через индекс cu121
+# 2) insightface после сборочных тулов
+RUN pip3 install --no-cache-dir insightface==0.7.3
+
+# 3) torch/vision/xformers — через индекс cu121 (под CUDA 12.1/12.2)
 RUN pip3 install --no-cache-dir \
     torch==2.3.1 torchvision==0.18.1 \
     --index-url https://download.pytorch.org/whl/cu121 && \
@@ -35,8 +42,8 @@ RUN pip3 install --no-cache-dir \
     --index-url https://download.pytorch.org/whl/cu121
 
 WORKDIR /app
-# Если Dockerfile лежит в папке gen/, оставь COPY . /app/
-# Если Dockerfile в корне репо — поменяй на: COPY gen/ /app/
+# если Dockerfile лежит в gen/, оставь COPY . /app/
+# если в корне — COPY gen/ /app/
 COPY . /app/
 
 EXPOSE 8081
