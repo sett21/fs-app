@@ -7,10 +7,9 @@ services:
     ports:
       - "8081:8081"
     environment:
-      NVIDIA_VISIBLE_DEVICES: all
-      NVIDIA_DRIVER_CAPABILITIES: compute,utility
-
-      HF_HUB_ENABLE_HF_TRANSFER: "0"
+      NVIDIA_VISIBLE_DEVICES: "all"
+      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
+      TORCHVISION_DISABLE_NMS_EXPORT: "1"   # ключевая строка
       USE_CPU: "0"
       INPAINT_REPO: "runwayml/stable-diffusion-inpainting"
       TORCH_dtype: "fp16"

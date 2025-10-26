@@ -1,50 +1,60 @@
+# ===== Base image: CUDA 12.2 runtime (Ubuntu 22.04) =====
 FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04
 
+# ===== Env =====
 ENV DEBIAN_FRONTEND=noninteractive \
+    PIP_NO_CACHE_DIR=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PIP_NO_CACHE_DIR=1
+    # отключаем быстрый загрузчик HF, чтобы не требовался отдельный пакет
+    HF_HUB_ENABLE_HF_TRANSFER=0 \
+    # у некоторых сборок torchvision нет опа NMS — не регистрируем его
+    TORCHVISION_DISABLE_NMS_EXPORT=1
 
-# Базовые либы + инструменты сборки для C/C++ (нужны insightface/mediapipe)
+# ===== System deps =====
+# libgl1/libglib2.0-0 нужны для opencv/mediapipe; build-essential — чтобы не упасть,
+# если insightface подтянет сборку, требующую компиляции небольшого C++ модуля
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-dev \
     git curl ca-certificates \
-    libglib2.0-0 libsm6 libxext6 libxrender1 libgl1 \
-    build-essential cmake \
-    && rm -rf /var/lib/apt/lists/*
+    libgl1 libglib2.0-0 \
+    build-essential \
+ && rm -rf /var/lib/apt/lists/*
 
-# Совместимые версии pip
+# pip новее
 RUN python3 -m pip install --upgrade pip
 
-# Инструменты сборки python-пакетов (до insightface!)
+# ===== PyTorch / CUDA 12.1 wheels =====
+# Ставим torch/torchvision/xformers строго из cu121-индекса, чтобы были корректные CUDA-опы
 RUN pip3 install --no-cache-dir \
-    setuptools wheel scikit-build cython
+      torch==2.3.1 torchvision==0.18.1 \
+      --index-url https://download.pytorch.org/whl/cu121 \
+ && pip3 install --no-cache-dir \
+      xformers==0.0.27.post2 \
+      --index-url https://download.pytorch.org/whl/cu121
 
-# 1) Всё из PyPI, что не зависит от CUDA-индекса
+# ===== Остальные Python-зависимости =====
 RUN pip3 install --no-cache-dir \
-    fastapi==0.115.0 uvicorn[standard]==0.30.6 \
-    pillow==10.4.0 numpy==1.26.4 \
-    opencv-python-headless==4.10.0.84 \
-    mediapipe==0.10.14 \
-    onnxruntime-gpu==1.18.0 \
-    diffusers==0.30.0 transformers==4.44.2 accelerate==0.34.2 \
-    protobuf==4.25.3
+      fastapi==0.115.0 uvicorn[standard]==0.30.6 \
+      pillow==10.4.0 \
+      numpy==1.26.4 \
+      opencv-python-headless==4.10.0.84 \
+      mediapipe==0.10.14 \
+      onnxruntime-gpu==1.18.0 \
+      insightface==0.7.3 \
+      diffusers==0.30.0 transformers==4.44.2 accelerate==0.34.2 \
+      protobuf==4.25.3 \
+      safetensors==0.4.5
 
-# 2) insightface после сборочных тулов
-RUN pip3 install --no-cache-dir insightface==0.7.3
-
-# 3) torch/vision/xformers — через индекс cu121 (под CUDA 12.1/12.2)
-RUN pip3 install --no-cache-dir \
-    torch==2.3.1 torchvision==0.18.1 \
-    --index-url https://download.pytorch.org/whl/cu121 && \
-    pip3 install --no-cache-dir \
-    xformers==0.0.27.post2 \
-    --index-url https://download.pytorch.org/whl/cu121
-
+# ===== App =====
 WORKDIR /app
-# если Dockerfile лежит в gen/, оставь COPY . /app/
-# если в корне — COPY gen/ /app/
-COPY . /app/
+# Предполагается структура проекта:
+#   ./gen/server.py
+#   ./gen/pipeline.py
+#   ./gen/models/inswapper_128.onnx (монтируется томом/копируется отдельно)
+COPY gen/ /app/
 
+# Порт REST API
 EXPOSE 8081
-CMD ["uvicorn","server:app","--host","0.0.0.0","--port","8081","--log-level","info"]
+
+# ===== Entrypoint =====
+CMD uvicorn server:app --host 0.0.0.0 --port 8081 --log-level info
