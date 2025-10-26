@@ -1,33 +1,23 @@
 FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04
-
-ENV DEBIAN_FRONTEND=noninteractive \
-    PYTHONUNBUFFERED=1
+ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 python3-pip python3-venv git curl ca-certificates libgl1 libglib2.0-0 \
-    && rm -rf /var/lib/apt/lists/*
+    python3 python3-pip python3-dev git curl ca-certificates \
+    libglib2.0-0 libsm6 libxext6 libxrender1 libgl1 && \
+    rm -rf /var/lib/apt/lists/*
 
-# Ускорение компиляций колёс (часто не нужно, но полезно)
-ENV PIP_NO_CACHE_DIR=1
-
-# Зависимости Python
 RUN pip3 install --upgrade pip
-RUN pip3 install \
-    fastapi uvicorn[standard] pillow numpy opencv-python \
-    mediapipe==0.10.14 \
-    onnxruntime-gpu==1.18.0 \
-    insightface==0.7.3 \
-    diffusers==0.30.0 transformers==4.44.2 accelerate==0.34.2 \
-    huggingface_hub==0.25.2 \
-    scipy
 
-# (опционально) xFormers для FP16/оптимизаций — если колёса доступны:
-# RUN pip3 install xformers==0.0.27.post2
+# CUDA 12.1 wheels для torch/torchvision/xformers
+RUN pip3 install \
+    fastapi uvicorn[standard] pillow numpy opencv-python-headless \
+    mediapipe==0.10.14 onnxruntime-gpu==1.18.0 insightface==0.7.3 \
+    torch==2.3.1 torchvision==0.18.1 --index-url https://download.pytorch.org/whl/cu121 && \
+    pip3 install diffusers==0.30.0 transformers==4.44.2 accelerate==0.34.2 \
+    xformers==0.0.27.post2 --index-url https://download.pytorch.org/whl/cu121
 
 WORKDIR /app
-COPY gen/ /app/
+COPY . /app/
 
-# Порты
 EXPOSE 8081
-
-CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8081", "--log-level", "debug", "--access-log"]
+CMD ["uvicorn","server:app","--host","0.0.0.0","--port","8081","--log-level","info"]
