@@ -1,0 +1,33 @@
+FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip python3-venv git curl ca-certificates libgl1 libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Ускорение компиляций колёс (часто не нужно, но полезно)
+ENV PIP_NO_CACHE_DIR=1
+
+# Зависимости Python
+RUN pip3 install --upgrade pip
+RUN pip3 install \
+    fastapi uvicorn[standard] pillow numpy opencv-python \
+    mediapipe==0.10.14 \
+    onnxruntime-gpu==1.18.0 \
+    insightface==0.7.3 \
+    diffusers==0.30.0 transformers==4.44.2 accelerate==0.34.2 \
+    huggingface_hub==0.25.2 \
+    scipy
+
+# (опционально) xFormers для FP16/оптимизаций — если колёса доступны:
+# RUN pip3 install xformers==0.0.27.post2
+
+WORKDIR /app
+COPY gen/ /app/
+
+# Порты
+EXPOSE 8081
+
+CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8081", "--log-level", "debug", "--access-log"]
