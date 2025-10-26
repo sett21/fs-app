@@ -7,14 +7,12 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     HF_HUB_ENABLE_HF_TRANSFER=0 \
     TRANSFORMERS_NO_TORCHVISION=1 \
+    TORCHVISION_DISABLE_NMS_EXPORT=1 \
     TOKENIZERS_PARALLELISM=false \
-    PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128
-
-# (опционально ограничим треды на CPU, чтобы не душить планировщик)
-ENV OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
+    PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128 \
+    OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 
 # ===== System deps =====
-# libgl1/libglib2.0-0 — для opencv/mediapipe; build-essential — на случай сборок мелких C++ модулей
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-dev \
     git curl ca-certificates \
@@ -22,11 +20,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
  && rm -rf /var/lib/apt/lists/*
 
-# свежий pip
 RUN python3 -m pip install --upgrade pip
 
-# ===== PyTorch / CUDA 12.1 wheels =====
-# Берём torch и xformers с cu121-индекса (совместимо с CUDA 12.2 runtime в контейнере)
+# ===== PyTorch / CUDA 12.1 wheels (совместимы с 12.2 runtime) =====
 RUN pip3 install --no-cache-dir \
       torch==2.3.1 \
       --index-url https://download.pytorch.org/whl/cu121 \
@@ -34,36 +30,35 @@ RUN pip3 install --no-cache-dir \
       xformers==0.0.27.post2 \
       --index-url https://download.pytorch.org/whl/cu121
 
-# На всякий пожарный — убедимся, что torchvision не присутствует
+# На всякий случай — убедимся, что torchvision не установлен
 RUN pip3 uninstall -y torchvision || true
 
+# ===== ONNX Runtime GPU (под CUDA 12!) =====
+# Важно: берем колесо с официального индекса ORT, иначе часто ставится сборка под CUDA11
+RUN pip3 install --no-cache-dir \
+      --extra-index-url https://download.onnxruntime.ai/ \
+      onnxruntime-gpu==1.18.1
+
 # ===== Остальные Python-зависимости =====
-# Пины подобраны, чтобы не конфликтовали mediapipe/numpy/protobuf и чтобы diffusers/transformers работали без torchvision
 RUN pip3 install --no-cache-dir \
       fastapi==0.115.0 uvicorn[standard]==0.30.6 \
       pillow==10.4.0 \
       numpy==1.26.4 \
       opencv-python-headless==4.10.0.84 \
       mediapipe==0.10.14 \
-      onnxruntime-gpu==1.18.0 \
       insightface==0.7.3 \
       diffusers==0.30.0 transformers==4.44.2 accelerate==0.34.2 \
       protobuf==4.25.3 \
-      safetensors==0.4.5
+      safetensors==0.4.5 \
+      python-multipart==0.0.9
 
 # ===== App =====
 WORKDIR /app
-# В проекте файлы серверной части лежат в ./gen
-#   gen/server.py
-#   gen/pipeline.py
-#   gen/models/inswapper_128.onnx (лучше монтировать томом в /models)
 COPY . /app/
 
-# Порт REST API
 EXPOSE 8081
 
 # ===== Entrypoint =====
-# Доп: включите лог-доступ и адекватные таймауты
 CMD uvicorn server:app \
     --host 0.0.0.0 --port 8081 \
     --log-level info --access-log \
