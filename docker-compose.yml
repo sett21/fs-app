@@ -1,0 +1,78 @@
+services:
+  gen:
+    image: selfie-postcard-gen-cpu:latest
+    build:
+      context: ./gen
+      dockerfile: Dockerfile.cpu
+    ports:
+      - "8081:8081"
+    environment:
+      PYTHONUNBUFFERED: "1"
+
+      # HuggingFace: отключаем быстрый загрузчик
+      HF_HUB_ENABLE_HF_TRANSFER: "0"
+
+      # Ограничим треды BLAS/torch (CPU)
+      TORCH_THREADS: "4"
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+
+      # CPU-режим и безопасные дефолты
+      USE_CPU: "1"
+      SKIP_WARMUP: "1"
+
+      # Diffusers-модель (можно заменить на SDXL-inpaint при наличии GPU)
+      INPAINT_REPO: "runwayml/stable-diffusion-inpainting"
+      TORCH_dtype: "fp32"
+
+      # Геометрия/качество
+      MAX_SIDE: "896"
+      STEPS: "8"
+      GUIDANCE: "4.0"
+      STRENGTH: "0.40"
+      OUTPUT_FORMAT: "png"
+
+      # Управление inpaint
+      SKIP_INPAINT: "0"          # 1 — полностью пропустить SD-inpaint
+      FALLBACK_INPAINT: "cv"     # cv = OpenCV inpaint вместо diffusers на CPU
+      INPAINT_SIDE_LIMIT: "512"  # SD-inpaint работает на уменьшенной копии
+
+      # Mediapipe (по умолчанию выключено для стабильности)
+      DISABLE_HANDS: "1"
+      DISABLE_FACEMESH: "1"
+
+      # FaceSwap
+      SWAP_MODE: "before"        # "before" или "after"
+      DISABLE_FACE_SWAP: "0"
+      INSIGHTFACE_DET_SIZE: "640"
+      FACE_MODEL_PATH: "/models/inswapper_128.onnx"
+
+      # Разное
+      SEAMLESS_EDGE: "1"
+      PAGE_EFFECT: "1"
+      PAGE_SIDE: "right"
+      PAGE_INNER_PX: "16"
+      PAGE_SHADE: "0.06"
+      PAGE_STRIPES: "1"
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8081/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 180s
+
+    command: >
+      uvicorn server:app --host 0.0.0.0 --port 8081
+      --log-level debug --access-log
+      --timeout-keep-alive 120 --timeout-graceful-shutdown 120
+
+    volumes:
+      - ./gen/models:/models:ro
+      - hf_cache:/root/.cache/huggingface
+      - /tmp:/tmp
+    restart: unless-stopped
+
+volumes:
+  hf_cache:

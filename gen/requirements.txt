@@ -1,0 +1,17 @@
+fastapi==0.112.0
+uvicorn[standard]==0.30.6
+numpy==1.26.4
+Pillow==10.4.0
+opencv-python-headless==4.9.0.80
+
+transformers==4.43.3
+diffusers==0.30.0
+accelerate==0.33.0
+safetensors==0.4.3
+controlnet-aux==0.0.9
+
+insightface==0.7.3
+onnxruntime-gpu==1.18.1   # в Dockerfile.cpu заменяется на onnxruntime (CPU)
+
+python-multipart==0.0.9    # <-- добавили это
+mediapipe==0.10.14
