@@ -1,23 +1,45 @@
 FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04
-ENV DEBIAN_FRONTEND=noninteractive
 
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1
+
+# Базовые зависимости
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 python3-pip python3-dev git curl ca-certificates \
+    python3 python3-pip python3-dev \
+    git curl ca-certificates \
     libglib2.0-0 libsm6 libxext6 libxrender1 libgl1 && \
     rm -rf /var/lib/apt/lists/*
 
-RUN pip3 install --upgrade pip
+RUN python3 -m pip install --upgrade pip
 
-# CUDA 12.1 wheels для torch/torchvision/xformers
-RUN pip3 install \
-    fastapi uvicorn[standard] pillow numpy opencv-python-headless \
-    mediapipe==0.10.14 onnxruntime-gpu==1.18.0 insightface==0.7.3 \
-    torch==2.3.1 torchvision==0.18.1 --index-url https://download.pytorch.org/whl/cu121 && \
-    pip3 install diffusers==0.30.0 transformers==4.44.2 accelerate==0.34.2 \
-    xformers==0.0.27.post2 --index-url https://download.pytorch.org/whl/cu121
+# 1) Обычные пакеты — с дефолтного PyPI
+# Пины подобраны под Linux x86_64 + CUDA12, чтобы не требовалась компиляция и чтобы mediapipe не конфликтовал с numpy/protobuf.
+RUN pip3 install --no-cache-dir \
+    fastapi==0.115.0 uvicorn[standard]==0.30.6 \
+    pillow==10.4.0 \
+    numpy==1.26.4 \
+    opencv-python-headless==4.10.0.84 \
+    mediapipe==0.10.14 \
+    onnxruntime-gpu==1.18.0 \
+    insightface==0.7.3 \
+    diffusers==0.30.0 transformers==4.44.2 accelerate==0.34.2 \
+    protobuf<5.0
+
+# 2) Torch/vision/xformers — через индекс PyTorch (cu121)
+RUN pip3 install --no-cache-dir \
+    torch==2.3.1 torchvision==0.18.1 \
+    --index-url https://download.pytorch.org/whl/cu121 && \
+    pip3 install --no-cache-dir \
+    xformers==0.0.27.post2 \
+    --index-url https://download.pytorch.org/whl/cu121
 
 WORKDIR /app
+# Если Dockerfile лежит в папке gen/, копируй текущий контент.
+# Если Dockerfile в корне — поменяй на `COPY gen/ /app/`
 COPY . /app/
 
 EXPOSE 8081
+
 CMD ["uvicorn","server:app","--host","0.0.0.0","--port","8081","--log-level","info"]
