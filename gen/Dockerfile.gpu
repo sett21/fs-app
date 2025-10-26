@@ -5,9 +5,8 @@ FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
     PYTHONUNBUFFERED=1 \
-    # отключаем быстрый загрузчик HF, чтобы не требовался отдельный пакет
     HF_HUB_ENABLE_HF_TRANSFER=0 \
-    # у некоторых сборок torchvision нет опа NMS — не регистрируем его
+    TRANSFORMERS_NO_TORCHVISION=1 \
     TORCHVISION_DISABLE_NMS_EXPORT=1
 
 # ===== System deps =====
