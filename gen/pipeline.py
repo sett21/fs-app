@@ -275,22 +275,34 @@ class Inpainter:
         is_sdxl = ("xl" in repo_l) or ("sdxl" in repo_l)
         pipe_cls = StableDiffusionXLInpaintPipeline if is_sdxl else StableDiffusionInpaintPipeline
         force_bin = "runwayml/stable-diffusion-inpainting" in repo_l
+
         def _load(use_st):
             return pipe_cls.from_pretrained(
                 model_repo, torch_dtype=dtype,
                 safety_checker=None, feature_extractor=None,
                 low_cpu_mem_usage=True, use_safetensors=(use_st and not force_bin)
             )
-        try: self.pipe = _load(True)
-        except Exception: self.pipe = _load(False)
+
+        try:
+            self.pipe = _load(True)
+        except Exception:
+            self.pipe = _load(False)
+
+        # мелкие оптимизации, не связанные с переносом
         try: self.pipe.enable_attention_slicing()
-        except Exception: pass
+        except: pass
         try: self.pipe.enable_vae_tiling()
-        except Exception: pass
-        if device != "cpu":
+        except: pass
+
+        # ВАЖНО: никакого offload на GPU!
+        if device == "cpu":
+            # на CPU можно последовательно выгружать, если хотите
             try: self.pipe.enable_sequential_cpu_offload()
-            except Exception: pass
-            self.pipe = self.pipe.to(device)
+            except: pass
+        else:
+            # GPU: просто переносим на CUDA и всё
+            self.pipe = self.pipe.to("cuda")
+
         self.device = device
 
     @torch.inference_mode()
