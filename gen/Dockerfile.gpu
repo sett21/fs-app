@@ -7,11 +7,14 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     HF_HUB_ENABLE_HF_TRANSFER=0 \
     TRANSFORMERS_NO_TORCHVISION=1 \
-    TORCHVISION_DISABLE_NMS_EXPORT=1
+    TOKENIZERS_PARALLELISM=false \
+    PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128
+
+# (опционально ограничим треды на CPU, чтобы не душить планировщик)
+ENV OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 
 # ===== System deps =====
-# libgl1/libglib2.0-0 нужны для opencv/mediapipe; build-essential — чтобы не упасть,
-# если insightface подтянет сборку, требующую компиляции небольшого C++ модуля
+# libgl1/libglib2.0-0 — для opencv/mediapipe; build-essential — на случай сборок мелких C++ модулей
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-dev \
     git curl ca-certificates \
@@ -19,19 +22,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
  && rm -rf /var/lib/apt/lists/*
 
-# pip новее
+# свежий pip
 RUN python3 -m pip install --upgrade pip
 
 # ===== PyTorch / CUDA 12.1 wheels =====
-# Ставим torch/torchvision/xformers строго из cu121-индекса, чтобы были корректные CUDA-опы
+# Берём torch и xformers с cu121-индекса (совместимо с CUDA 12.2 runtime в контейнере)
 RUN pip3 install --no-cache-dir \
-      torch==2.3.1 torchvision==0.18.1 \
+      torch==2.3.1 \
       --index-url https://download.pytorch.org/whl/cu121 \
  && pip3 install --no-cache-dir \
       xformers==0.0.27.post2 \
       --index-url https://download.pytorch.org/whl/cu121
 
+# На всякий пожарный — убедимся, что torchvision не присутствует
+RUN pip3 uninstall -y torchvision || true
+
 # ===== Остальные Python-зависимости =====
+# Пины подобраны, чтобы не конфликтовали mediapipe/numpy/protobuf и чтобы diffusers/transformers работали без torchvision
 RUN pip3 install --no-cache-dir \
       fastapi==0.115.0 uvicorn[standard]==0.30.6 \
       pillow==10.4.0 \
@@ -46,14 +53,18 @@ RUN pip3 install --no-cache-dir \
 
 # ===== App =====
 WORKDIR /app
-# Предполагается структура проекта:
-#   ./gen/server.py
-#   ./gen/pipeline.py
-#   ./gen/models/inswapper_128.onnx (монтируется томом/копируется отдельно)
-COPY . /app/
+# В проекте файлы серверной части лежат в ./gen
+#   gen/server.py
+#   gen/pipeline.py
+#   gen/models/inswapper_128.onnx (лучше монтировать томом в /models)
+COPY gen/ /app/
 
 # Порт REST API
 EXPOSE 8081
 
 # ===== Entrypoint =====
-CMD uvicorn server:app --host 0.0.0.0 --port 8081 --log-level info
+# Доп: включите лог-доступ и адекватные таймауты
+CMD uvicorn server:app \
+    --host 0.0.0.0 --port 8081 \
+    --log-level info --access-log \
+    --timeout-keep-alive 120 --timeout-graceful-shutdown 120

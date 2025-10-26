@@ -1,6 +1,5 @@
 import os
-os.environ.setdefault("TRANSFORMERS_NO_TORCHVISION", "1")  # Transformers не импортирует torchvision
-# опционально (не обязательно, но не помешает):
+os.environ.setdefault("TRANSFORMERS_NO_TORCHVISION", "1")  # запрет Transformers импортировать torchvision
 os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "0")
 
 import cv2, numpy as np, torch
