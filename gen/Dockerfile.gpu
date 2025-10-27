@@ -1,5 +1,5 @@
-# ===== Base image: CUDA 12.2 runtime (Ubuntu 22.04) =====
-FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04
+# ===== Base image: CUDA 11.8 runtime (Ubuntu 22.04) =====
+FROM nvidia/cuda:11.8.0-runtime-ubuntu22.04
 
 # ===== Env =====
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -22,22 +22,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN python3 -m pip install --upgrade pip
 
-# ===== PyTorch / CUDA 12.1 wheels (совместимы с 12.2 runtime) =====
+# ===== PyTorch / CUDA 11.8 wheels =====
+# (ставим только torch; torchvision не нужен)
 RUN pip3 install --no-cache-dir \
       torch==2.3.1 \
-      --index-url https://download.pytorch.org/whl/cu121 \
+      --index-url https://download.pytorch.org/whl/cu118 \
  && pip3 install --no-cache-dir \
       xformers==0.0.27.post2 \
-      --index-url https://download.pytorch.org/whl/cu121
+      --index-url https://download.pytorch.org/whl/cu118
 
-# На всякий случай — убедимся, что torchvision не установлен
-RUN pip3 uninstall -y torchvision || true
-
-# ===== ONNX Runtime GPU (под CUDA 12!) =====
-# Важно: берем колесо с официального индекса ORT, иначе часто ставится сборка под CUDA11
+# ===== ONNX Runtime GPU (под CUDA 11.x) =====
 RUN pip3 install --no-cache-dir \
-      --extra-index-url https://download.onnxruntime.ai/ \
-      onnxruntime-gpu==1.18.1
+      onnxruntime-gpu==1.17.1
 
 # ===== Остальные Python-зависимости =====
 RUN pip3 install --no-cache-dir \
@@ -48,8 +44,7 @@ RUN pip3 install --no-cache-dir \
       mediapipe==0.10.14 \
       insightface==0.7.3 \
       diffusers==0.30.0 transformers==4.44.2 accelerate==0.34.2 \
-      protobuf==4.25.3 \
-      safetensors==0.4.5 \
+      protobuf==4.25.3 safetensors==0.4.5 \
       python-multipart==0.0.9
 
 # ===== App =====
