@@ -1,6 +1,7 @@
 # ===== CUDA 12.1 + cuDNN8 runtime (Ubuntu 22.04) =====
 FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
 
+# Общие переменные окружения
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PYTHONUNBUFFERED=1 HF_HUB_ENABLE_HF_TRANSFER=0 \
@@ -8,20 +9,24 @@ ENV DEBIAN_FRONTEND=noninteractive \
     TOKENIZERS_PARALLELISM=false PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128 \
     OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 
+# Важно: чтобы динамический загрузчик видел CUDA/compat либы
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/cuda/compat/lib:/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}
+
+# Системные зависимости
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-dev git curl ca-certificates \
-    libgl1 libglib2.0-0 build-essential && rm -rf /var/lib/apt/lists/*
+    libgl1 libglib2.0-0 build-essential && \
+    rm -rf /var/lib/apt/lists/*
 
-# ---------- Глобальный constraint, чтобы NumPy не уехал в 2.x ----------
-# Создаём файл ограничений и включаем его через /etc/pip.conf
+# ---------- Глобальный constraint: не даём NumPy уйти в 2.x ----------
 RUN printf "numpy<2\n" > /etc/pip-constraints.txt && \
     printf "[global]\nconstraint = /etc/pip-constraints.txt\n" > /etc/pip.conf
 
-# Сразу ставим фиксированный NumPy (будет использоваться и дальше)
+# Свежий pip + зафиксированный NumPy (совместим со многими бинарными колёсами)
 RUN python3 -m pip install --upgrade pip && \
     pip3 install --no-cache-dir numpy==1.26.4
 
-# PyTorch / xformers под CUDA 12.1
+# PyTorch/xformers под CUDA 12.1
 RUN pip3 install --no-cache-dir \
       torch==2.3.1 torchvision==0.18.1 \
       --index-url https://download.pytorch.org/whl/cu121 && \
@@ -30,10 +35,13 @@ RUN pip3 install --no-cache-dir \
       --index-url https://download.pytorch.org/whl/cu121 && \
     pip3 uninstall -y torchvision || true
 
-# ORT под CUDA12 — будет собран против NumPy 1.26.4
-RUN pip3 install --no-cache-dir onnxruntime-gpu==1.18.0
+# ---- ONNX Runtime GPU: именно сборка под CUDA12 с официального индекса ORT ----
+RUN pip3 uninstall -y onnxruntime onnxruntime-gpu || true && \
+    pip3 install --no-cache-dir \
+      --extra-index-url https://download.onnxruntime.ai/ \
+      onnxruntime-gpu==1.18.0
 
-# Остальной стек (constraint уже активен глобально)
+# Остальной стек
 RUN pip3 install --no-cache-dir --upgrade-strategy only-if-needed \
       fastapi==0.115.0 uvicorn[standard]==0.30.6 \
       pillow==10.4.0 opencv-python-headless==4.10.0.84 \
@@ -41,15 +49,17 @@ RUN pip3 install --no-cache-dir --upgrade-strategy only-if-needed \
       diffusers==0.30.0 transformers==4.44.2 accelerate==0.34.2 \
       protobuf==4.25.3 safetensors==0.4.5 python-multipart==0.0.9
 
-# Проверки на этапе билда (не дадим собрать «битовый» образ)
+# Проверка прямо на этапе сборки (поймает неверный wheel ORT)
 RUN python3 - <<'PY'
 import numpy, onnxruntime as ort
 print("NumPy:", numpy.__version__)
-print("ORT providers:", ort.get_available_providers())
+prov = ort.get_available_providers()
+print("ORT providers:", prov)
 assert numpy.__version__.startswith("1."), "NumPy drifted to 2.x"
-assert "CUDAExecutionProvider" in ort.get_available_providers(), "CUDA EP not available"
+assert "CUDAExecutionProvider" in prov, f"CUDA EP not available: {prov}"
 PY
 
+# Приложение
 WORKDIR /app
 COPY . /app/
 EXPOSE 8081
