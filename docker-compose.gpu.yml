@@ -80,6 +80,12 @@ services:
 
       # отладка
       SWAP_DEBUG: "1"
+      DEFAULT_PROMPT: >-
+        photorealistic selfie; person holding a postcard; keep postcard unchanged;
+        natural skin texture; soft contact shadows; realistic fingers, no blur
+      NEG_PROMPT: >-
+        altered postcard, changed text, hdr halos, glow edges, extra fingers,
+        deformed hands, warped text, logo distortion, oversharpen, blur, artifacts
 
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8081/healthz || exit 1"]
