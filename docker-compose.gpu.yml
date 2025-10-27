@@ -21,9 +21,9 @@ services:
 
       DISABLE_HANDS: "0"
       DISABLE_FACEMESH: "0"
-      SWAP_MODE: "before"
+      SWAP_MODE: "after"
       DISABLE_FACE_SWAP: "0"
-      INSIGHTFACE_DET_SIZE: "640"
+      INSIGHTFACE_DET_SIZE: "1000"
       FACE_MODEL_PATH: "/models/inswapper_128.onnx"
 
     volumes:
