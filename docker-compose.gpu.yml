@@ -26,12 +26,12 @@ services:
     MAX_SIDE: "1280"                       # входной предел по длинной стороне
     STEPS: "24"
     GUIDANCE: "4.2"
-    STRENGTH: "0.45"
+    STRENGTH: "0.42"
     INPAINT_SIDE_LIMIT: "0"               # 0 = без даунскейла (или поставь 1024..1536 на слабом GPU)
 
     # Поведение по краям
-    RING_IN_PCT: "0.004"
-    RING_OUT_PCT: "0.012"
+    RING_IN_PCT: "0.0035"     # было 0.004 — ещё чуть уже кромка
+    RING_OUT_PCT: "0.009"     # было 0.012
     SEAMLESS_EDGE: "1"
 
     # Эффект «страницы»
@@ -42,7 +42,7 @@ services:
     PAGE_STRIPES: "1"
 
     # Контакт-тень и «фото-зерно»
-    RIM_SHADE: "0.06"
+    RIM_SHADE: "0.05"
     GRAIN_STRENGTH: "0.012"
 
     # Hand / Facemesh
@@ -59,7 +59,6 @@ services:
     SKIP_INPAINT: "0"                      # 1 — отключить SD-inpaint
     FALLBACK_INPAINT: "0"                  # "cv" или "1" — OpenCV inpaint фоллбек
     SAVE_DEBUG: "0"
-
 
     volumes:
       - ./gen/models:/models:ro

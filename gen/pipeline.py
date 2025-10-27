@@ -72,6 +72,55 @@ def hand_mask_bgr(bgr: np.ndarray) -> np.ndarray:
     return cv2.dilate(mask, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7)), 1)
 
 # ===== Utils =====
+def refine_alpha_with_edges(rgb: np.ndarray, alpha: np.ndarray, iters: int = 2) -> np.ndarray:
+    """
+    Делает перо «прилепленным» к реальным границам: стягивает альфу к контуру кожи.
+    Работает без ximgproc (guided filter), только OpenCV.
+    alpha: float32 0..1
+    """
+    h, w = alpha.shape[:2]
+    g = cv2.cvtColor(rgb, cv2.COLOR_BGR2GRAY)
+    # Нормализуем и усилим локальный контраст
+    g = cv2.equalizeHist(g)
+    # Карта краёв
+    edges = cv2.Canny(g, 60, 140)
+    edges = cv2.dilate(edges, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3,3)), 1)
+
+    a = alpha.copy().astype(np.float32)
+    for _ in range(iters):
+        # чуть «ужать» и вернуть к краю по морф.градиенту
+        tight = cv2.morphologyEx((a*255).astype(np.uint8), cv2.MORPH_ERODE,
+                                 cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(3,3)), 1)
+        tight = tight.astype(np.float32) / 255.0
+        # подмешать карту краёв как притяжение
+        edge_pull = cv2.GaussianBlur((edges>0).astype(np.float32), (0,0), 0.8)
+        a = np.clip(tight + 0.25*edge_pull*(1.0 - tight), 0.0, 1.0)
+        # сгладить, но без расползания
+        a = cv2.bilateralFilter(a, d=0, sigmaColor=0.12, sigmaSpace=2)
+    return np.clip(a, 0.0, 1.0)
+
+def build_contact_masks_tight(hand_mask: np.ndarray, doc_mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Возвращает:
+      - contact_line: очень узкий (1-3px) контур соприкосновения руки и открытки
+      - edge_narrow: узкая (3-5px) кромка открытки для inpaint
+    """
+    k3 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(3,3))
+    k5 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(5,5))
+    # контуры
+    hand_edge = cv2.morphologyEx(hand_mask, cv2.MORPH_GRADIENT, k3)
+    doc_edge  = cv2.morphologyEx(doc_mask,  cv2.MORPH_GRADIENT, k3)
+    # линия контакта = пересечение кромок
+    contact_line = cv2.bitwise_and(hand_edge, doc_edge)
+    contact_line = cv2.dilate(contact_line, k3, 1)   # 1–3px
+    # узкая кромка открытки (вне руки)
+    doc_edge_narrow = cv2.dilate(doc_edge, k3, 1)
+    doc_edge_narrow = cv2.bitwise_and(doc_edge_narrow, cv2.bitwise_not(hand_mask))
+    # подчистим артефакты
+    contact_line = cv2.medianBlur(contact_line, 3)
+    edge_narrow  = cv2.morphologyEx(doc_edge_narrow, cv2.MORPH_OPEN, k3, 1)
+    return contact_line, edge_narrow
+
 def hex_to_bgr(hex_color: str) -> Tuple[int,int,int]:
     hex_color = hex_color.lstrip("#")
     return (int(hex_color[4:6],16), int(hex_color[2:4],16), int(hex_color[0:2],16))
@@ -197,10 +246,13 @@ def unsharp_mask(bgr: np.ndarray, radius: float=1.0, amount: float=0.6, threshol
         return np.clip(bgr + (high * amount * m), 0, 255).astype(np.uint8)
     return np.clip(bgr + high * amount, 0, 255).astype(np.uint8)
 
-def highpass_detail(bgr: np.ndarray, sigma: float=1.0, gain: float=0.35) -> np.ndarray:
-    low = cv2.GaussianBlur(bgr, (0,0), sigma)
-    hi  = cv2.subtract(bgr, low)
-    return np.clip(bgr + hi * gain, 0, 255).astype(np.uint8)
+def highpass_detail(img: np.ndarray, sigma: float = 0.9, gain: float = 0.22) -> np.ndarray:
+    """Лёгкий high-pass для возвращения микродеталей без ореолов."""
+    blur = cv2.GaussianBlur(img, (0, 0), sigma)
+    hp   = cv2.addWeighted(img, 1.0, blur, -1.0, 0.0)          # высокие частоты
+    out  = cv2.addWeighted(img.astype(np.float32), 1.0, hp.astype(np.float32), gain, 0.0)
+    return np.clip(out, 0, 255).astype(np.uint8)
+
 
 def add_fine_grain(bgr: np.ndarray, strength: float=0.015, seed: int=42) -> np.ndarray:
     if strength <= 0: return bgr
@@ -539,10 +591,10 @@ class GenPipeline:
         # ===== 6) Скрыть шов: более узкий laplacian-blend =====
         rin  = max(1, int(self.ring_in_pct  * min(H, W)))
         rout = max(3, int(self.ring_out_pct * min(H, W)))
-        edge_grad  = ring_grad(mask_poly, rin, rout)                 # 0..1
+        edge_grad  = ring_grad(mask_poly, rin, rout)  # 0..1
         alpha_edge = (edge_grad[:, :, None] * (nohand[:, :, None]/255.0)).astype(np.float32)
-        alpha_edge_tight = np.clip(alpha_edge * 0.85, 0, 1)
-        init = laplacian_blend(overlay, init, alpha_edge_tight, levels=3)
+        alpha_edge = np.clip(alpha_edge * 0.8, 0, 1)  # чуть уже чем раньше
+        init = laplacian_blend(overlay, init, alpha_edge, levels=3)
 
         # ===== 7) Дефриндж зелени (край + под пальцами) =====
         k3 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(3,3))
@@ -550,6 +602,17 @@ class GenPipeline:
         under_hand = cv2.bitwise_and(hand, mask_poly)
         to_despill = cv2.bitwise_or(edge_band, under_hand)
         init = green_defringe(init, overlay, to_despill)
+
+        # ===== 7.4) Ультра-узкий контактный контур пальцев =====
+        contact_line, edge_narrow = build_contact_masks_tight(hand, mask_poly)
+
+        contact_alpha = (contact_line.astype(np.float32)/255.0)
+        contact_alpha = refine_alpha_with_edges(selfie_bgr, contact_alpha, iters=2)  # 0..1
+
+        # слегка затемняем только вдоль контакта, чтобы убрать ореол
+        shade_k = float(os.getenv("RIM_SHADE", "0.06"))
+        mul = 1.0 - shade_k * contact_alpha[:, :, None]
+        init = np.clip(init.astype(np.float32) * mul, 0, 255).astype(np.uint8)
 
         # ===== 7.5) Контакт-тень вдоль кромки (реализм) =====
         edge_dist = cv2.distanceTransform((mask_poly>0).astype(np.uint8), cv2.DIST_L2, 3)
@@ -561,15 +624,9 @@ class GenPipeline:
         shade_k = float(os.getenv("RIM_SHADE", "0.06"))
         mul = 1.0 - shade_k * rim[:, :, None]
         init = np.clip(init.astype(np.float32) * mul, 0, 255).astype(np.uint8)
-
-        # ===== 8) Узкая маска для inpaint (пальцы/тени) =====
-        ring_base   = build_edge_mask_binary(selfie_bgr, quad, H, W, rin, max(rout, rin+4))
-        hand_erode  = cv2.erode(hand, cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(5,5)), 1)
-        ring_wo_hand= cv2.bitwise_and(ring_base, cv2.bitwise_not(hand_erode))
-        contact_band= cv2.dilate(cv2.bitwise_and(ring_base, hand),
-                                 cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(3,3)), 1)
-        mask_edge   = cv2.bitwise_or(ring_wo_hand, contact_band)
-        _, mask_edge= cv2.threshold(mask_edge, 127, 255, cv2.THRESH_BINARY)
+        
+        mask_edge = np.clip(edge_narrow.astype(np.uint8) | (contact_alpha*255).astype(np.uint8), 0, 255)
+        _, mask_edge = cv2.threshold(mask_edge, 1, 255, cv2.THRESH_BINARY)
 
         # (опц.) лёгкая компенсация света по кромке
         if self.seamless_edge:
@@ -646,15 +703,15 @@ class GenPipeline:
             steps=steps, guidance=guidance, strength=strength
         )
 
-        out_bgr_s = bgr_from_pil(out_img)
-        out_bgr = cv2.resize(out_bgr_s, (W, H), interpolation=cv2.INTER_LINEAR)
+        # добавить ВЧ деталей в зоне правки (чтобы пальцы не выглядели замыленными)
+        out_bgr = highpass_detail(out_bgr, sigma=0.9, gain=0.22)
 
-        # добавить ВЧ деталей в зоне правки
-        out_bgr = highpass_detail(out_bgr, sigma=1.0, gain=0.25)
-
-        # жёсткий композит по узкой маске (всё вне неё — из init)
-        m = (mask_edge.astype(np.float32)/255.0)[:, :, None]
-        final_bgr = (out_bgr.astype(np.float32)*m + init.astype(np.float32)*(1-m)).astype(np.uint8)
+        # жёсткий композит по узкой маске
+        m = (mask_edge.astype(np.float32)/255.0)
+        # ещё раз подщёлкнем m к границе по градиентам яркости
+        m = refine_alpha_with_edges(selfie_bgr, m, iters=1)
+        m3 = m[:, :, None]
+        final_bgr = (out_bgr.astype(np.float32)*m3 + init.astype(np.float32)*(1-m3)).astype(np.uint8)
 
         # ===== 10) Faceswap (после), если так выбран режим =====
         if not self.disable_swap and self.swap_mode == "after":
