@@ -61,10 +61,8 @@ PY
 
 # Приложение
 WORKDIR /app
-ENV PYTHONPATH="/app:${PYTHONPATH}"
+ENV PYTHONPATH=/app
 COPY . /app/
 EXPOSE 8081
 
-CMD uvicorn gen.server.main:app --host 0.0.0.0 --port 8081 \
-    --log-level info --access-log \
-    --timeout-keep-alive 120 --timeout-graceful-shutdown 120
+CMD ["python3", "-m", "uvicorn", "gen.server.main:app", "--host", "0.0.0.0", "--port", "8081", "--log-level", "info", "--access-log", "--timeout-keep-alive", "120", "--timeout-graceful-shutdown", "120"]
