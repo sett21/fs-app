@@ -62,7 +62,7 @@ services:
 
       # FaceSwap
       DISABLE_FACE_SWAP: "0"
-      SWAP_MODE: "before"
+      SWAP_MODE: "after"
       INSIGHTFACE_DET_SIZE: "640"
       FACE_MODEL_PATH: "/models/inswapper_128.onnx"
       DISABLE_HANDS: "0"
