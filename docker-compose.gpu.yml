@@ -2,7 +2,7 @@
 services:
   gen:
     build:
-      context: ./gen
+      context: .
       dockerfile: Dockerfile.gpu
     image: postcard-selfie-gen:gpu
     ports:
