@@ -1,5 +1,5 @@
-# ===== CUDA 12.2 runtime (Ubuntu 22.04) =====
-FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04
+# ===== CUDA 12.2 + cuDNN runtime (Ubuntu 22.04) =====
+FROM nvidia/cuda:12.2.0-cudnn8-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
@@ -11,39 +11,45 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128 \
     OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 
+# Системные пакеты
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-dev \
     git curl ca-certificates \
-    libgl1 libglib2.0-0 \
-    build-essential \
- && rm -rf /var/lib/apt/lists/*
+    libgl1 libglib2.0-0 build-essential && \
+    rm -rf /var/lib/apt/lists/*
 
 RUN python3 -m pip install --upgrade pip
 
-# Torch / xformers под CUDA 12.1 (совместимо с CUDA 12.2 runtime)
+# Torch/xformers под CUDA 12.1 (совместимы с CUDA 12.2 runtime)
 RUN pip3 install --no-cache-dir \
       torch==2.3.1 torchvision==0.18.1 \
-      --index-url https://download.pytorch.org/whl/cu121 \
- && pip3 install --no-cache-dir \
+      --index-url https://download.pytorch.org/whl/cu121 && \
+    pip3 install --no-cache-dir \
       xformers==0.0.27.post2 \
-      --index-url https://download.pytorch.org/whl/cu121
+      --index-url https://download.pytorch.org/whl/cu121 && \
+    pip3 uninstall -y torchvision || true
 
-# На всякий случай — удалить torchvision (мы его не используем)
-RUN pip3 uninstall -y torchvision || true
+# !!! Очень важно: удалить любые прежние onnxruntime*, поставить cu12-сборку 1.18.0
+RUN pip3 uninstall -y onnxruntime-gpu onnxruntime || true && \
+    pip3 install --no-cache-dir onnxruntime-gpu==1.18.0
+
+# Быстрая валидация: провайдер CUDA должен присутствовать (провал билда, если нет)
+RUN python3 - <<'PY'
+import onnxruntime as ort
+prov = ort.get_available_providers()
+print("ORT providers:", prov)
+assert "CUDAExecutionProvider" in prov, f"CUDA provider not available: {prov}"
+PY
 
 # Остальные зависимости
 RUN pip3 install --no-cache-dir \
       fastapi==0.115.0 uvicorn[standard]==0.30.6 \
-      pillow==10.4.0 \
-      numpy==1.26.4 \
+      pillow==10.4.0 numpy==1.26.4 \
       opencv-python-headless==4.10.0.84 \
       mediapipe==0.10.14 \
-      onnxruntime-gpu==1.18.0 \
       insightface==0.7.3 \
       diffusers==0.30.0 transformers==4.44.2 accelerate==0.34.2 \
-      protobuf==4.25.3 \
-      safetensors==0.4.5 \
-      python-multipart==0.0.9
+      protobuf==4.25.3 safetensors==0.4.5 python-multipart==0.0.9
 
 WORKDIR /app
 COPY . /app/
