@@ -71,6 +71,13 @@ class GenPipeline:
 
         # ===== 2) Прямоугольник =====
         quad = detect_green_quad(selfie_bgr, "#00ff84")
+
+        quad_center = (float(quad[:,0].mean()), float(quad[:,1].mean()))
+        # если SWAP_MODE=before
+        selfie_bgr = self.swapper.swap(selfie_bgr, face_bgr, quad_center=quad_center)
+        # ... если SWAP_MODE=after — при втором вызове тоже передай quad_center:
+        final_bgr = self.swapper.swap(final_bgr, face_bgr, quad_center=quad_center)
+
         if quad is None or quad.shape != (4,2):
             raise RuntimeError("Green rectangle (#00ff84) not found or invalid")
 

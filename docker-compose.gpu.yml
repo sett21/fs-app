@@ -58,10 +58,21 @@ services:
       # Faceswap
       DISABLE_FACE_SWAP: "0"
       SWAP_MODE: "before"
-      INSIGHTFACE_DET_SIZE: "800"
+      INSIGHTFACE_DET_SIZE: "896"
+      INSIGHTFACE_DET_THRESH: "0.5"
       FACE_MODEL_PATH: "/models/inswapper_128.onnx"
       DISABLE_HANDS: "0"
       DISABLE_FACEMESH: "0"
+       # расширенная маска
+      SWAP_EAR_EXPAND_PX: "18"   # 14–24
+      SWAP_HAIR_EXPAND_PX: "12"  # 8–16
+      SWAP_CHIN_CUT_PX: "6"      # 4–10
+      SWAP_POISSON_FULL: "1"     # полноразмерный Poisson поверх ext_mask
+      # волосы источника (опционально)
+      HAIR_FROM_SRC: "1"
+      HAIR_ALPHA: "0.85"
+        # микро-резкость после свопа
+      SWAP_SHARP_GAIN: "0.22"
 
       # Отладка
       SAVE_DEBUG: "0"
