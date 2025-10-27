@@ -1,6 +1,8 @@
 import os
-os.environ.setdefault("TRANSFORMERS_NO_TORCHVISION", "1")  # запрет Transformers импортировать torchvision
+# Заблокировать torchvision внутри transformers (чтобы не требовались ops вроде nms)
+os.environ.setdefault("TRANSFORMERS_NO_TORCHVISION", "1")
 os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "0")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 import cv2, numpy as np, torch
 from typing import Tuple, Optional
@@ -114,84 +116,6 @@ def order_pts(pts: np.ndarray) -> np.ndarray:
     s = pts.sum(axis=1); diff = np.diff(pts, axis=1)
     return np.array([pts[np.argmin(s)], pts[np.argmin(diff)], pts[np.argmax(s)], pts[np.argmax(diff)]], np.float32)
 
-def warp_into_quad(src_bgr: np.ndarray, dst_quad: np.ndarray, canvas_size: Tuple[int,int]) -> tuple[np.ndarray,np.ndarray]:
-    """Перспективная вклейка src в четырехугольник dst_quad на холсте (H, W)."""
-    Hc, Wc = canvas_size
-    dst_quad = order_pts(dst_quad)
-    tw = max(int(np.linalg.norm(dst_quad[1]-dst_quad[0])), 20)
-    th = max(int(np.linalg.norm(dst_quad[3]-dst_quad[0])), 20)
-
-    interp_card = cv2.INTER_AREA if (tw < src_bgr.shape[1] and th < src_bgr.shape[0]) else cv2.INTER_LINEAR
-    card = cv2.resize(src_bgr, (tw, th), interpolation=interp_card)
-    card_pad = cv2.copyMakeBorder(card, 1,1,1,1, cv2.BORDER_REPLICATE)
-    src_pts = np.array([[1,1],[tw,1],[tw,th],[1,th]], np.float32)
-
-    M = cv2.getPerspectiveTransform(src_pts, dst_quad)
-    overlay = cv2.warpPerspective(card_pad, M, (Wc, Hc), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
-
-    mask = np.zeros((Hc, Wc), np.uint8)
-    cv2.fillConvexPoly(mask, dst_quad.astype(np.int32), 255)
-    return overlay, mask
-
-def pil_from_bgr(img: np.ndarray) -> Image.Image:
-    return Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
-def bgr_from_pil(im: Image.Image) -> np.ndarray:
-    return cv2.cvtColor(np.array(im), cv2.COLOR_RGB2BGR)
-
-def detect_green_quad(bgr: np.ndarray, hex_color="#00ff84") -> Optional[np.ndarray]:
-    """Поиск зелёного прямоугольника (#00ff84). Возвращает 4 точки в координатах исходника."""
-    Ht = int(cv2.cvtColor(np.uint8([[list(hex_to_bgr(hex_color))]]), cv2.COLOR_BGR2HSV)[0,0,0])
-    hshift = int(os.getenv("GREEN_H_SHIFT","15"))
-    smin   = int(os.getenv("GREEN_S_MIN","80"))
-    vmin   = int(os.getenv("GREEN_V_MIN","60"))
-    small, s = resize_limit(bgr, 1600)
-    hsv = cv2.cvtColor(small, cv2.COLOR_BGR2HSV)
-    lower = np.array([max(Ht-hshift,0), smin, vmin], np.uint8)
-    upper = np.array([min(Ht+hshift,179), 255, 255], np.uint8)
-    mask = cv2.inRange(hsv, lower, upper)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((5,5),np.uint8), 2)
-    cnts,_ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if not cnts: return None
-    c = max(cnts, key=cv2.contourArea)
-    peri = cv2.arcLength(c, True)
-    approx = cv2.approxPolyDP(c, 0.02*peri, True)
-    quad = (approx.reshape(-1,2) if len(approx)==4 else cv2.boxPoints(cv2.minAreaRect(c))).astype(np.float32)
-    return quad / s
-
-def green_mask_hsv(bgr: np.ndarray, base_hex="#00ff84",
-                   hshift: int=None, smin: int=None, vmin: int=None) -> np.ndarray:
-    if hshift is None: hshift = int(os.getenv("GREEN_H_SHIFT","15"))
-    if smin   is None: smin   = int(os.getenv("GREEN_S_MIN","80"))
-    if vmin   is None: vmin   = int(os.getenv("GREEN_V_MIN","60"))
-    Ht = int(cv2.cvtColor(np.uint8([[list(hex_to_bgr(base_hex))]]), cv2.COLOR_BGR2HSV)[0,0,0])
-    hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
-    lower = np.array([max(Ht-hshift,0), smin, vmin], np.uint8)
-    upper = np.array([min(Ht+hshift,179), 255, 255], np.uint8)
-    m = cv2.inRange(hsv, lower, upper)
-    return cv2.medianBlur(m, 3)
-
-# ===== локальный дефриндж «зелени» =====
-def green_defringe(base_bgr: np.ndarray, overlay_bgr: np.ndarray, edge_mask: np.ndarray) -> np.ndarray:
-    if edge_mask.ndim == 3:
-        edge_mask = edge_mask[..., 0]
-    band = cv2.GaussianBlur((edge_mask > 0).astype(np.uint8) * 255, (0, 0), 1.0)
-    if band.max() == 0:
-        return base_bgr
-    b, g, r = cv2.split(base_bgr)
-    greenish = ((g.astype(np.int16) - r.astype(np.int16) > 18) &
-                (g.astype(np.int16) - b.astype(np.int16) > 18) &
-                (g > 120)).astype(np.uint8)
-    band = cv2.bitwise_and((band > 0).astype(np.uint8), greenish)
-    if band.max() == 0:
-        return base_bgr
-    g2 = g.copy()
-    idx = band.astype(bool)
-    g2[idx] = (g2[idx].astype(np.float32) * 0.8).astype(np.uint8)
-    fixed = cv2.merge([b, g2, r])
-    a = (cv2.GaussianBlur(band * 255, (0, 0), 1.0).astype(np.float32) / 255.0)[:, :, None]
-    return (fixed.astype(np.float32) * (1 - a) + overlay_bgr.astype(np.float32) * a).astype(np.uint8)
-
-# ===== линейный свет и Laplacian blend по узкому кольцу =====
 def srgb_to_lin(x):
     x = x.astype(np.float32)/255.0
     return np.where(x<=0.04045, x/12.92, ((x+0.055)/1.055)**2.4)
@@ -233,7 +157,6 @@ def ring_grad(mask_poly: np.ndarray, inner_px=8, outer_px=8):
     if dist.max()>0: dist = dist/dist.max()
     return dist  # 0..1
 
-# ===== лёгкий «стопка страниц» =====
 def apply_page_stack(card_bgr: np.ndarray, side="right", inner_px=16, shade=0.06, stripes=True) -> np.ndarray:
     h,w = card_bgr.shape[:2]
     ramp = np.zeros((h,w), np.float32)
@@ -259,11 +182,61 @@ def apply_page_stack(card_bgr: np.ndarray, side="right", inner_px=16, shade=0.06
                 out[y:y+1, :] = (out[y:y+1, :].astype(np.float32)*(1-a)).astype(np.uint8)
     return out
 
-# ===== безопасный Poisson =====
 def _safe_seamless_clone(src, dst, mask, center):
     if mask is None or mask.max() == 0: return dst
     try: return cv2.seamlessClone(src, dst, mask, center, cv2.MIXED_CLONE)
     except Exception: return dst
+
+# ===== Детализация / резкость / зерно =====
+def unsharp_mask(bgr: np.ndarray, radius: float=1.0, amount: float=0.6, threshold: int=0) -> np.ndarray:
+    blur = cv2.GaussianBlur(bgr, (0, 0), radius)
+    high = cv2.subtract(bgr, blur)
+    if threshold > 0:
+        m = (cv2.cvtColor(cv2.absdiff(bgr, blur), cv2.COLOR_BGR2GRAY) > threshold).astype(np.uint8)
+        m = m[:, :, None]
+        return np.clip(bgr + (high * amount * m), 0, 255).astype(np.uint8)
+    return np.clip(bgr + high * amount, 0, 255).astype(np.uint8)
+
+def highpass_detail(bgr: np.ndarray, sigma: float=1.0, gain: float=0.35) -> np.ndarray:
+    low = cv2.GaussianBlur(bgr, (0,0), sigma)
+    hi  = cv2.subtract(bgr, low)
+    return np.clip(bgr + hi * gain, 0, 255).astype(np.uint8)
+
+def add_fine_grain(bgr: np.ndarray, strength: float=0.015, seed: int=42) -> np.ndarray:
+    if strength <= 0: return bgr
+    h, w = bgr.shape[:2]
+    rng = np.random.default_rng(seed)
+    noise = rng.standard_normal((h, w, 1)).astype(np.float32)
+    lin = srgb_to_lin(bgr)
+    lin = np.clip(lin + noise * strength, 0, 1)
+    return lin_to_srgb(lin)
+
+# ===== Перспективная вклейка с повышением чёткости =====
+def warp_into_quad(src_bgr: np.ndarray, dst_quad: np.ndarray, canvas_size: Tuple[int,int]) -> tuple[np.ndarray,np.ndarray]:
+    """Перспективная вклейка src в четырехугольник dst_quad на холсте (H, W). Минимум блюра."""
+    Hc, Wc = canvas_size
+    dst_quad = order_pts(dst_quad)
+    tw = max(int(np.linalg.norm(dst_quad[1]-dst_quad[0])), 20)
+    th = max(int(np.linalg.norm(dst_quad[3]-dst_quad[0])), 20)
+
+    # Кубическая интерполяция + микро-деталь
+    card = cv2.resize(src_bgr, (tw, th), interpolation=cv2.INTER_CUBIC)
+    card = cv2.GaussianBlur(card, (0,0), 0.2)
+    card = highpass_detail(card, sigma=0.8, gain=0.25)
+
+    card_pad = cv2.copyMakeBorder(card, 1,1,1,1, cv2.BORDER_REPLICATE)
+    src_pts = np.array([[1,1],[tw,1],[tw,th],[1,th]], np.float32)
+
+    M = cv2.getPerspectiveTransform(src_pts, dst_quad)
+    overlay = cv2.warpPerspective(card_pad, M, (Wc, Hc), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+
+    mask = np.zeros((Hc, Wc), np.uint8)
+    cv2.fillConvexPoly(mask, dst_quad.astype(np.int32), 255)
+
+    # локальная резкость только по открытке
+    ov_sharp = unsharp_mask(overlay, radius=0.6, amount=0.5, threshold=0)
+    overlay = np.where(mask[:, :, None] > 0, ov_sharp, overlay)
+    return overlay, mask
 
 # ===== Inpainter =====
 class Inpainter:
@@ -288,19 +261,17 @@ class Inpainter:
         except Exception:
             self.pipe = _load(False)
 
-        # мелкие оптимизации, не связанные с переносом
+        # лёгкие оптимизации
         try: self.pipe.enable_attention_slicing()
         except: pass
         try: self.pipe.enable_vae_tiling()
         except: pass
 
-        # ВАЖНО: никакого offload на GPU!
         if device == "cpu":
-            # на CPU можно последовательно выгружать, если хотите
             try: self.pipe.enable_sequential_cpu_offload()
             except: pass
         else:
-            # GPU: просто переносим на CUDA и всё
+            # На GPU — без offload, просто переносим
             self.pipe = self.pipe.to("cuda")
 
         self.device = device
@@ -428,11 +399,17 @@ class FaceSwapper:
         ear_cut = cv2.erode(oval, cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(19,19)), 1)
         face_core = cv2.erode(oval, cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(7,7)), 1)
         hair_band_t = cv2.bitwise_and(hair_band_t, cv2.bitwise_not(ear_cut))
-        mix_mask = cv2.bitwise_or(face_core, hair_band_t)     # 0/255
-        mix_alpha = cv2.GaussianBlur(mix_mask, (0,0), 1.6).astype(np.float32)/255.0
-        mix_alpha = mix_alpha[:,:,None]
 
-        # Reinhard color match внутри маски
+        mix_mask = cv2.bitwise_or(face_core, hair_band_t)  # 0/255
+
+        # distance-based alpha
+        dist = cv2.distanceTransform((mix_mask>0).astype(np.uint8), cv2.DIST_L2, 3)
+        if dist.max() > 0:
+            dist = dist / dist.max()
+        alpha_pow = 0.9
+        mix_alpha = (dist ** alpha_pow)[:, :, None].astype(np.float32)
+
+        # Reinhard в маске
         def _reinhard_to_ref(src_img, ref_img, msk):
             m = msk > 0
             if not np.any(m): return src_img
@@ -446,25 +423,27 @@ class FaceSwapper:
 
         rough_matched = _reinhard_to_ref(rough, target_bgr, mix_mask)
 
-        # Сохраняем очки/жёсткие границы из таргета
-        gray = cv2.cvtColor(target_bgr, cv2.COLOR_BGR2GRAY)
-        edges = cv2.Canny(gray, 80, 160)
-        edges = cv2.dilate(edges, cv2.getStructuringElement(cv2.MORPH_RECT,(3,3)), 1)
-        glasses_mask = cv2.bitwise_and(edges, oval)
-        glasses_mask = cv2.GaussianBlur(glasses_mask, (0,0), 1.2)
-        glasses_a = (glasses_mask.astype(np.float32)/255.0)[:,:,None] * 0.85
+        # инъекция высоких частот
+        rough_hf = cv2.subtract(rough_matched, cv2.GaussianBlur(rough_matched, (0,0), 1.0))
+        detail_gain = 0.45
 
-        out = (rough_matched.astype(np.float32)*mix_alpha + target_bgr.astype(np.float32)*(1-mix_alpha)).astype(np.uint8)
-        if glasses_a.max() > 0:
-            out = (target_bgr.astype(np.float32)*glasses_a + out.astype(np.float32)*(1-glasses_a)).astype(np.uint8)
+        base_mix = (rough_matched.astype(np.float32) * mix_alpha +
+                    target_bgr.astype(np.float32)   * (1 - mix_alpha))
+        base_mix = np.clip(base_mix, 0, 255).astype(np.uint8)
+        hf = (rough_hf.astype(np.float32) * detail_gain)
+        out = np.clip(base_mix.astype(np.float32) + hf * mix_alpha, 0, 255).astype(np.uint8)
 
-        # Узкий Poisson по периметру
+        # Узкий Poisson-поясок
         band = cv2.morphologyEx(mix_mask, cv2.MORPH_GRADIENT,
-                                cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(7,7)))
+                                cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(5,5)))
         ys, xs = np.where(mix_mask>0)
         if len(xs) > 0:
             center = (int(xs.mean()), int(ys.mean()))
             out = _safe_seamless_clone(out, target_bgr, band, center)
+
+        # Локальная резкость только по лицу
+        sharp_face = unsharp_mask(out, radius=0.7, amount=0.4, threshold=2)
+        out = np.where(mix_mask[:, :, None] > 0, sharp_face, out)
 
         return out
 
@@ -543,26 +522,27 @@ class GenPipeline:
             except Exception as e:
                 print(f"[page_effect] skipped: {e}", flush=True)
 
-        # ===== 4) Перспективная вклейка открытки в кадр =====
+        # ===== 4) Перспективная вклейка открытки =====
         overlay, mask_poly = warp_into_quad(postcard_bgr, quad, (H, W))
 
-        # ===== 5) HAND-AWARE размещение: открытка позади руки =====
+        # ===== 5) HAND-AWARE: открытка позади руки =====
         hand   = hand_mask_bgr(selfie_bgr)            # 255 = рука
         nohand = (hand == 0).astype(np.uint8)
         place = (nohand & (mask_poly>0).astype(np.uint8)).astype(np.float32)  # 0/1
-        alpha_hard = place[:, :, None]  # 0..1 без пера внутри документа
+        alpha_hard = place[:, :, None]
 
         # линейный свет для аккуратного микса
         base_lin = srgb_to_lin(selfie_bgr)
         ov_lin   = srgb_to_lin(overlay)
         init     = lin_to_srgb(ov_lin*alpha_hard + base_lin*(1-alpha_hard))
 
-        # ===== 6) Скрыть шов: тонкий laplacian-blend только в узком поясе =====
+        # ===== 6) Скрыть шов: более узкий laplacian-blend =====
         rin  = max(1, int(self.ring_in_pct  * min(H, W)))
         rout = max(3, int(self.ring_out_pct * min(H, W)))
         edge_grad  = ring_grad(mask_poly, rin, rout)                 # 0..1
         alpha_edge = (edge_grad[:, :, None] * (nohand[:, :, None]/255.0)).astype(np.float32)
-        init = laplacian_blend(overlay, init, alpha_edge)
+        alpha_edge_tight = np.clip(alpha_edge * 0.85, 0, 1)
+        init = laplacian_blend(overlay, init, alpha_edge_tight, levels=3)
 
         # ===== 7) Дефриндж зелени (край + под пальцами) =====
         k3 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(3,3))
@@ -570,6 +550,17 @@ class GenPipeline:
         under_hand = cv2.bitwise_and(hand, mask_poly)
         to_despill = cv2.bitwise_or(edge_band, under_hand)
         init = green_defringe(init, overlay, to_despill)
+
+        # ===== 7.5) Контакт-тень вдоль кромки (реализм) =====
+        edge_dist = cv2.distanceTransform((mask_poly>0).astype(np.uint8), cv2.DIST_L2, 3)
+        if edge_dist.max() > 0:
+            edge_dist = edge_dist / edge_dist.max()
+        rim = np.clip(1.0 - edge_dist, 0, 1)
+        rim = cv2.GaussianBlur(rim, (0,0), 1.0)
+        rim = rim * (nohand.astype(np.float32))
+        shade_k = float(os.getenv("RIM_SHADE", "0.06"))
+        mul = 1.0 - shade_k * rim[:, :, None]
+        init = np.clip(init.astype(np.float32) * mul, 0, 255).astype(np.uint8)
 
         # ===== 8) Узкая маска для inpaint (пальцы/тени) =====
         ring_base   = build_edge_mask_binary(selfie_bgr, quad, H, W, rin, max(rout, rin+4))
@@ -590,7 +581,7 @@ class GenPipeline:
                 except Exception as e:
                     print(f"[seamless_edge] skipped: {e}", flush=True)
 
-        # ===== 8.5) Полный скип SD-inpaint по флагу (надёжный режим) =====
+        # Полный скип SD-inpaint
         if os.getenv("SKIP_INPAINT", "0") == "1":
             final_bgr = init
             swap_mode = (os.getenv("SWAP_MODE", "").lower()
@@ -602,9 +593,11 @@ class GenPipeline:
                     final_bgr = self.swapper.swap(final_bgr, face_bgr)
                 except Exception as e:
                     print(f"[faceswap][after][skip_inpaint] failed: {e}", flush=True)
+            # eле заметное фото-зерно на всём кадре
+            final_bgr = add_fine_grain(final_bgr, strength=float(os.getenv("GRAIN_STRENGTH","0.012")))
             return final_bgr
 
-        # ===== 8.7) Лёгкий CPU-fallback (без diffusers) =====
+        # Лёгкий CPU-fallback (без diffusers)
         use_cpu = os.getenv("USE_CPU","0") == "1"
         force_cv = os.getenv("FALLBACK_INPAINT","").lower() in {"1","cv"}
         if use_cpu or force_cv:
@@ -619,9 +612,10 @@ class GenPipeline:
                     final_bgr = self.swapper.swap(final_bgr, face_bgr)
                 except Exception as e:
                     print(f"[faceswap][after][cv_fallback] {e}", flush=True)
+            final_bgr = add_fine_grain(final_bgr, strength=float(os.getenv("GRAIN_STRENGTH","0.012")))
             return final_bgr
 
-        # ===== 9) SD Inpaint (c даунскейлом, чтобы не ловить OOM) =====
+        # ===== 9) SD Inpaint (с возможным даунскейлом) =====
         _r8 = lambda x: (x+7)//8*8
         W8, H8   = _r8(W), _r8(H)
         init_8   = cv2.resize(init, (W8, H8), interpolation=cv2.INTER_LINEAR)
@@ -633,12 +627,15 @@ class GenPipeline:
             w_s, h_s = max(64, int(W8*scale)), max(64, int(H8*scale))
             init_s = cv2.resize(init_8, (w_s, h_s), interpolation=cv2.INTER_AREA)
             mask_s = cv2.resize(mask_8, (w_s, h_s), interpolation=cv2.INTER_NEAREST)
-            steps = max(6, self.steps//2)
-            guidance = min(self.guidance, 4.0)
-            strength = min(self.strength, 0.45)
+            # Бережные настройки при даунскейле
+            steps = max(12, self.steps)
+            guidance = min(self.guidance, 4.2)
+            strength = min(self.strength, 0.42)
             in_img = init_s; in_mask = mask_s
         else:
-            steps = self.steps; guidance = self.guidance; strength = self.strength
+            steps = max(18, self.steps)      # минимум деталей
+            guidance = min(self.guidance, 4.5)
+            strength = min(self.strength, 0.45)
             in_img = init_8; in_mask = mask_8
 
         out_img = self.inpainter.inpaint(
@@ -651,6 +648,9 @@ class GenPipeline:
 
         out_bgr_s = bgr_from_pil(out_img)
         out_bgr = cv2.resize(out_bgr_s, (W, H), interpolation=cv2.INTER_LINEAR)
+
+        # добавить ВЧ деталей в зоне правки
+        out_bgr = highpass_detail(out_bgr, sigma=1.0, gain=0.25)
 
         # жёсткий композит по узкой маске (всё вне неё — из init)
         m = (mask_edge.astype(np.float32)/255.0)[:, :, None]
@@ -676,4 +676,65 @@ class GenPipeline:
             except Exception as e:
                 print(f"[debug_save] failed: {e}", flush=True)
 
+        # финишный штрих — тонкое зерно на всё изображение
+        final_bgr = add_fine_grain(final_bgr, strength=float(os.getenv("GRAIN_STRENGTH","0.012")))
         return final_bgr
+
+
+# ===== Преобразования PIL <-> BGR =====
+def pil_from_bgr(img: np.ndarray) -> Image.Image:
+    return Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+def bgr_from_pil(im: Image.Image) -> np.ndarray:
+    return cv2.cvtColor(np.array(im), cv2.COLOR_RGB2BGR)
+
+def detect_green_quad(bgr: np.ndarray, hex_color="#00ff84") -> Optional[np.ndarray]:
+    """Поиск зелёного прямоугольника (#00ff84). Возвращает 4 точки в координатах исходника."""
+    Ht = int(cv2.cvtColor(np.uint8([[list(hex_to_bgr(hex_color))]]), cv2.COLOR_BGR2HSV)[0,0,0])
+    hshift = int(os.getenv("GREEN_H_SHIFT","15"))
+    smin   = int(os.getenv("GREEN_S_MIN","80"))
+    vmin   = int(os.getenv("GREEN_V_MIN","60"))
+    small, s = resize_limit(bgr, 1600)
+    hsv = cv2.cvtColor(small, cv2.COLOR_BGR2HSV)
+    lower = np.array([max(Ht-hshift,0), smin, vmin], np.uint8)
+    upper = np.array([min(Ht+hshift,179), 255, 255], np.uint8)
+    mask = cv2.inRange(hsv, lower, upper)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((5,5),np.uint8), 2)
+    cnts,_ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not cnts: return None
+    c = max(cnts, key=cv2.contourArea)
+    peri = cv2.arcLength(c, True)
+    approx = cv2.approxPolyDP(c, 0.02*peri, True)
+    quad = (approx.reshape(-1,2) if len(approx)==4 else cv2.boxPoints(cv2.minAreaRect(c))).astype(np.float32)
+    return quad / s
+
+def green_mask_hsv(bgr: np.ndarray, base_hex="#00ff84",
+                   hshift: int=None, smin: int=None, vmin: int=None) -> np.ndarray:
+    if hshift is None: hshift = int(os.getenv("GREEN_H_SHIFT","15"))
+    if smin   is None: smin   = int(os.getenv("GREEN_S_MIN","80"))
+    if vmin   is None: vmin   = int(os.getenv("GREEN_V_MIN","60"))
+    Ht = int(cv2.cvtColor(np.uint8([[list(hex_to_bgr(base_hex))]]), cv2.COLOR_BGR2HSV)[0,0,0])
+    hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+    lower = np.array([max(Ht-hshift,0), smin, vmin], np.uint8)
+    upper = np.array([min(Ht+hshift,179), 255, 255], np.uint8)
+    m = cv2.inRange(hsv, lower, upper)
+    return cv2.medianBlur(m, 3)
+
+def green_defringe(base_bgr: np.ndarray, overlay_bgr: np.ndarray, edge_mask: np.ndarray) -> np.ndarray:
+    if edge_mask.ndim == 3:
+        edge_mask = edge_mask[..., 0]
+    band = cv2.GaussianBlur((edge_mask > 0).astype(np.uint8) * 255, (0, 0), 1.0)
+    if band.max() == 0:
+        return base_bgr
+    b, g, r = cv2.split(base_bgr)
+    greenish = ((g.astype(np.int16) - r.astype(np.int16) > 18) &
+                (g.astype(np.int16) - b.astype(np.int16) > 18) &
+                (g > 120)).astype(np.uint8)
+    band = cv2.bitwise_and((band > 0).astype(np.uint8), greenish)
+    if band.max() == 0:
+        return base_bgr
+    g2 = g.copy()
+    idx = band.astype(bool)
+    g2[idx] = (g2[idx].astype(np.float32) * 0.8).astype(np.uint8)
+    fixed = cv2.merge([b, g2, r])
+    a = (cv2.GaussianBlur(band * 255, (0, 0), 1.0).astype(np.float32) / 255.0)[:, :, None]
+    return (fixed.astype(np.float32) * (1 - a) + overlay_bgr.astype(np.float32) * a).astype(np.uint8)

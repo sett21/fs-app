@@ -6,25 +6,60 @@ services:
       dockerfile: Dockerfile.gpu
     ports:
       - "8081:8081"
-    environment:
-      NVIDIA_VISIBLE_DEVICES: "all"
-      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
-      TORCHVISION_DISABLE_NMS_EXPORT: "1"   # ключевая строка
-      USE_CPU: "0"
-      INPAINT_REPO: "runwayml/stable-diffusion-inpainting"
-      TORCH_dtype: "fp16"
-      MAX_SIDE: "1280"
-      STEPS: "20"
-      GUIDANCE: "5.0"
-      STRENGTH: "0.5"
-      OUTPUT_FORMAT: "png"
+  environment:
+    PYTHONUNBUFFERED: "1"
+    HF_HUB_ENABLE_HF_TRANSFER: "0"
+    TRANSFORMERS_NO_TORCHVISION: "1"
+    TOKENIZERS_PARALLELISM: "false"
+    PYTORCH_CUDA_ALLOC_CONF: "max_split_size_mb:128"
 
-      DISABLE_HANDS: "0"
-      DISABLE_FACEMESH: "0"
-      SWAP_MODE: "after"
-      DISABLE_FACE_SWAP: "0"
-      INSIGHTFACE_DET_SIZE: "1000"
-      FACE_MODEL_PATH: "/models/inswapper_128.onnx"
+    # Производительность
+    TORCH_THREADS: "4"
+    OMP_NUM_THREADS: "1"
+    OPENBLAS_NUM_THREADS: "1"
+    MKL_NUM_THREADS: "1"
+
+    # Модель и качество
+    USE_CPU: "0"                           # GPU
+    INPAINT_REPO: "runwayml/stable-diffusion-inpainting"   # SD1.5 inpaint; можно поменять при желании
+    TORCH_dtype: "fp16"
+    MAX_SIDE: "1280"                       # входной предел по длинной стороне
+    STEPS: "24"
+    GUIDANCE: "4.2"
+    STRENGTH: "0.45"
+    INPAINT_SIDE_LIMIT: "0"               # 0 = без даунскейла (или поставь 1024..1536 на слабом GPU)
+
+    # Поведение по краям
+    RING_IN_PCT: "0.004"
+    RING_OUT_PCT: "0.012"
+    SEAMLESS_EDGE: "1"
+
+    # Эффект «страницы»
+    PAGE_EFFECT: "1"
+    PAGE_SIDE: "right"                     # right|left|top|bottom
+    PAGE_INNER_PX: "16"
+    PAGE_SHADE: "0.06"
+    PAGE_STRIPES: "1"
+
+    # Контакт-тень и «фото-зерно»
+    RIM_SHADE: "0.06"
+    GRAIN_STRENGTH: "0.012"
+
+    # Hand / Facemesh
+    DISABLE_HANDS: "0"
+    DISABLE_FACEMESH: "0"
+
+    # FaceSwap
+    SWAP_MODE: "before"                    # before|after
+    DISABLE_FACE_SWAP: "0"
+    INSIGHTFACE_DET_SIZE: "1024"           # устойчивее детекция; можно 1280 для мелких лиц
+    FACE_MODEL_PATH: "/models/inswapper_128.onnx"
+
+    # Отладка / фоллбеки
+    SKIP_INPAINT: "0"                      # 1 — отключить SD-inpaint
+    FALLBACK_INPAINT: "0"                  # "cv" или "1" — OpenCV inpaint фоллбек
+    SAVE_DEBUG: "0"
+
 
     volumes:
       - ./gen/models:/models:ro
