@@ -2,27 +2,26 @@
 FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PYTHONUNBUFFERED=1 \
-    HF_HUB_ENABLE_HF_TRANSFER=0 \
-    TRANSFORMERS_NO_TORCHVISION=1 \
-    TORCHVISION_DISABLE_NMS_EXPORT=1 \
-    TOKENIZERS_PARALLELISM=false \
-    PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128 \
+    PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONUNBUFFERED=1 HF_HUB_ENABLE_HF_TRANSFER=0 \
+    TRANSFORMERS_NO_TORCHVISION=1 TORCHVISION_DISABLE_NMS_EXPORT=1 \
+    TOKENIZERS_PARALLELISM=false PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128 \
     OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 python3-pip python3-dev \
-    git curl ca-certificates libgl1 libglib2.0-0 build-essential \
- && rm -rf /var/lib/apt/lists/*
+    python3 python3-pip python3-dev git curl ca-certificates \
+    libgl1 libglib2.0-0 build-essential && rm -rf /var/lib/apt/lists/*
 
-RUN python3 -m pip install --upgrade pip
+# ---------- Глобальный constraint, чтобы NumPy не уехал в 2.x ----------
+# Создаём файл ограничений и включаем его через /etc/pip.conf
+RUN printf "numpy<2\n" > /etc/pip-constraints.txt && \
+    printf "[global]\nconstraint = /etc/pip-constraints.txt\n" > /etc/pip.conf
 
-# ★ Сразу фиксируем NumPy < 2, чтобы всё дальше собиралось на нём
-RUN pip3 install --no-cache-dir "numpy==1.26.4"
+# Сразу ставим фиксированный NumPy (будет использоваться и дальше)
+RUN python3 -m pip install --upgrade pip && \
+    pip3 install --no-cache-dir numpy==1.26.4
 
-# PyTorch/xformers под CUDA 12.1
+# PyTorch / xformers под CUDA 12.1
 RUN pip3 install --no-cache-dir \
       torch==2.3.1 torchvision==0.18.1 \
       --index-url https://download.pytorch.org/whl/cu121 && \
@@ -31,34 +30,30 @@ RUN pip3 install --no-cache-dir \
       --index-url https://download.pytorch.org/whl/cu121 && \
     pip3 uninstall -y torchvision || true
 
-# ★ ORT под CUDA12 (на уже зафиксированном NumPy 1.26)
-RUN pip3 uninstall -y onnxruntime-gpu onnxruntime || true && \
-    pip3 install --no-cache-dir onnxruntime-gpu==1.18.0
+# ORT под CUDA12 — будет собран против NumPy 1.26.4
+RUN pip3 install --no-cache-dir onnxruntime-gpu==1.18.0
 
-# ★ Проверка провайдеров ORT — теперь импорт пройдёт
+# Остальной стек (constraint уже активен глобально)
+RUN pip3 install --no-cache-dir --upgrade-strategy only-if-needed \
+      fastapi==0.115.0 uvicorn[standard]==0.30.6 \
+      pillow==10.4.0 opencv-python-headless==4.10.0.84 \
+      mediapipe==0.10.14 insightface==0.7.3 \
+      diffusers==0.30.0 transformers==4.44.2 accelerate==0.34.2 \
+      protobuf==4.25.3 safetensors==0.4.5 python-multipart==0.0.9
+
+# Проверки на этапе билда (не дадим собрать «битовый» образ)
 RUN python3 - <<'PY'
 import numpy, onnxruntime as ort
 print("NumPy:", numpy.__version__)
 print("ORT providers:", ort.get_available_providers())
-assert "CUDAExecutionProvider" in ort.get_available_providers()
+assert numpy.__version__.startswith("1."), "NumPy drifted to 2.x"
+assert "CUDAExecutionProvider" in ort.get_available_providers(), "CUDA EP not available"
 PY
-
-# Остальные зависимости (не даём тащить новый NumPy)
-RUN pip3 install --no-cache-dir --upgrade-strategy only-if-needed \
-      fastapi==0.115.0 uvicorn[standard]==0.30.6 \
-      pillow==10.4.0 \
-      opencv-python-headless==4.10.0.84 \
-      mediapipe==0.10.14 \
-      insightface==0.7.3 \
-      diffusers==0.30.0 transformers==4.44.2 accelerate==0.34.2 \
-      protobuf==4.25.3 safetensors==0.4.5 python-multipart==0.0.9 \
-  && python3 -c "import numpy as np; print('NumPy still pinned:', np.__version__)"
 
 WORKDIR /app
 COPY . /app/
 EXPOSE 8081
 
-CMD uvicorn server:app \
-    --host 0.0.0.0 --port 8081 \
+CMD uvicorn server:app --host 0.0.0.0 --port 8081 \
     --log-level info --access-log \
     --timeout-keep-alive 120 --timeout-graceful-shutdown 120
