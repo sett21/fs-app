@@ -29,10 +29,15 @@ services:
     STRENGTH: "0.42"
     INPAINT_SIDE_LIMIT: "0"               # 0 = без даунскейла (или поставь 1024..1536 на слабом GPU)
 
+    INPAINT_LONG: "1024"
+    INPAINT_PAD_PCT: "0.06"
+    MASK_GROW: "3"
+
     # Поведение по краям
     RING_IN_PCT: "0.0035"     # было 0.004 — ещё чуть уже кромка
     RING_OUT_PCT: "0.009"     # было 0.012
     SEAMLESS_EDGE: "1"
+    EDGE_SNAP_EDGE_SNAP_ITERS: "1"
 
     # Эффект «страницы»
     PAGE_EFFECT: "1"
@@ -48,6 +53,8 @@ services:
     # Hand / Facemesh
     DISABLE_HANDS: "0"
     DISABLE_FACEMESH: "0"
+    FINGER_DETAIL_GAIN: "0.35"
+    FINGER_DETAIL_SIGMA: "1.1"
 
     # FaceSwap
     SWAP_MODE: "before"                    # before|after
