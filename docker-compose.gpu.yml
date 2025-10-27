@@ -70,6 +70,17 @@ services:
       OUTPUT_FORMAT: "png"
       USE_CPU: "0"
 
+      SWAP_SELECT: "center"       # варианты: center | largest | index
+      SWAP_INDEX: "0"             # используется, если SWAP_SELECT=index
+
+      # усиление заметности свопа
+      SWAP_CORE_GAIN: "1.20"      # 1.0..1.5 — сильнее «ядро» лица
+      SWAP_HAIR_ALPHA: "0.35"     # 0..1    — слабее волосы (меньше артефактов по линии волос)
+      SWAP_CORE_DILATE: "11"      # шире ядро
+
+      # отладка
+      SWAP_DEBUG: "1"
+
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8081/healthz || exit 1"]
       interval: 10s

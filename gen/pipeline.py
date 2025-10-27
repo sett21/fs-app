@@ -422,24 +422,60 @@ class FaceSwapper:
         src_faces = self.app.get(src_face_bgr)
         print(f"[faceswap] found target={len(tar_faces)} src={len(src_faces)}", flush=True)
 
-        def _pick_biggest(faces):
-            if not faces: return None
-            return max(faces, key=lambda f: (f.bbox[2]-f.bbox[0])*(f.bbox[3]-f.bbox[1]))
-
-        tar = _pick_biggest(tar_faces)
-        src = _pick_biggest(src_faces)
-        if tar is None or src is None:
-            print("[faceswap] no faces -> skip", flush=True)
+        if not src_faces:
+            print("[faceswap] no source face -> skip", flush=True)
             return target_bgr
 
+        # --- выбор таргет-лица по стратегии ---
+        strategy = os.getenv("SWAP_SELECT", "center").lower()  # center|largest|index
+        idx_env  = int(os.getenv("SWAP_INDEX", "0"))
+
+        def _bbox_area(f): 
+            x0,y0,x1,y1 = f.bbox
+            return max(1,(x1-x0)*(y1-y0))
+
+        def _pick_target(faces, shape):
+            if not faces: 
+                return None
+            if strategy == "index":
+                i = max(0, min(len(faces)-1, idx_env))
+                return faces[i]
+            if strategy == "largest":
+                return max(faces, key=_bbox_area)
+            # default: center — берем с минимальной дистанцией от центра кадра
+            H,W = shape[:2]
+            cx, cy = W/2, H/2
+            def _dist2(f):
+                x0,y0,x1,y1 = f.bbox
+                fx, fy = (x0+x1)/2.0, (y0+y1)/2.0
+                return (fx-cx)**2 + (fy-cy)**2
+            return min(faces, key=_dist2)
+
+        tar = _pick_target(tar_faces, target_bgr)
+        src = src_faces[0]  # если в источнике вдруг несколько — берём первый/крупнейший при желании
+
+        if tar is None:
+            print("[faceswap] no target face -> skip", flush=True)
+            return target_bgr
+
+        # сам своп
         rough = self.swapper.get(target_bgr.copy(), tar, src, paste_back=True)
 
-        h, w = target_bgr.shape[:2]
+        # --- усиление заметности свопа (контролируемо) ---
+        # ядро лица делаем чуть шире, волосы — слабее (переменные можно крутить)
+        gain_core   = float(os.getenv("SWAP_CORE_GAIN", "1.0"))    # 1.0 = как было
+        hair_alpha  = float(os.getenv("SWAP_HAIR_ALPHA","0.5"))    # 0.5 — слабее влияния волос
+        core_dilate = int(os.getenv("SWAP_CORE_DILATE","9"))       # шире ядро лица
+
+        h, w = rough.shape[:2]
         oval = self._oval_mask(rough)
         if oval.max() == 0:
             return rough
 
-        # подчистка и естественный микс
+        # расширим "ядро" лица
+        core = cv2.erode(oval, cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(max(3,core_dilate),)*2), 1)
+
+        # hair-band из источника, перенос на таргет по ключевым точкам
         eye_dist = float(np.linalg.norm(src.kps[0] - src.kps[1])) + 1e-6
         scale = max(0.6, min(1.6, eye_dist/55.0))
         inner = max(8, int(self.cfg.band_inner_px * scale))
@@ -453,14 +489,11 @@ class FaceSwapper:
                                      flags=cv2.INTER_NEAREST,
                                      borderMode=cv2.BORDER_CONSTANT)
 
-        ear_cut = cv2.erode(oval, cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(19,19)), 1)
-        face_core = cv2.erode(oval, cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(7,7)), 1)
-        hair_band_t = cv2.bitwise_and(hair_band_t, cv2.bitwise_not(ear_cut))
-        mix_mask = cv2.bitwise_or(face_core, hair_band_t)
-        mix_alpha = cv2.GaussianBlur(mix_mask, (0,0), 1.6).astype(np.float32)/255.0
-        mix_alpha = mix_alpha[:,:,None]
+        # соберём маску: ядро + немного волос, но волосы делаем слабее
+        hair_band_t = cv2.bitwise_and(hair_band_t, cv2.bitwise_not(cv2.erode(oval, cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(19,19)), 1)))
+        mix_mask = cv2.bitwise_or(core, cv2.threshold(hair_band_t, 1, 255, cv2.THRESH_BINARY)[1])
 
-        # color match Reinhard
+        # color match (Reinhard) в области свопа
         def _reinhard_to_ref(src_img, ref_img, msk):
             m = msk > 0
             if not np.any(m): return src_img
@@ -474,26 +507,34 @@ class FaceSwapper:
 
         rough_matched = _reinhard_to_ref(rough, target_bgr, mix_mask)
 
-        # очки/жёсткие границы
-        gray = cv2.cvtColor(target_bgr, cv2.COLOR_BGR2GRAY)
-        edges = cv2.Canny(gray, 80, 160)
-        edges = cv2.dilate(edges, cv2.getStructuringElement(cv2.MORPH_RECT,(3,3)), 1)
-        glasses_mask = cv2.bitwise_and(edges, oval)
-        glasses_mask = cv2.GaussianBlur(glasses_mask, (0,0), 1.2)
-        glasses_a = (glasses_mask.astype(np.float32)/255.0)[:,:,None] * 0.85
+        # альфа: ядро полнее (gain_core), волосы слабее (hair_alpha)
+        m_core = (core.astype(np.float32)/255.0)[:,:,None] * gain_core
+        m_hair = (cv2.GaussianBlur(hair_band_t,(0,0),1.2).astype(np.float32)/255.0)[:,:,None] * hair_alpha
+        mix_a  = np.clip(m_core + m_hair, 0.0, 1.0)
 
-        out = (rough_matched.astype(np.float32)*mix_alpha + target_bgr.astype(np.float32)*(1-mix_alpha)).astype(np.uint8)
-        if glasses_a.max() > 0:
-            out = (target_bgr.astype(np.float32)*glasses_a + out.astype(np.float32)*(1-glasses_a)).astype(np.uint8)
+        out = (rough_matched.astype(np.float32)*mix_a + target_bgr.astype(np.float32)*(1-mix_a)).astype(np.uint8)
 
-        # узкий Poisson по периметру
+        # узкий Poisson по границе, чтобы не светился шов
         band = cv2.morphologyEx(mix_mask, cv2.MORPH_GRADIENT,
                                 cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(7,7)))
         ys, xs = np.where(mix_mask>0)
         if len(xs) > 0:
             center = (int(xs.mean()), int(ys.mean()))
             out = _safe_seamless_clone(out, target_bgr, band, center)
+
+        # отладочный дамп
+        if os.getenv("SWAP_DEBUG","0") == "1":
+            try:
+                dbg = target_bgr.copy()
+                x0,y0,x1,y1 = map(int, tar.bbox)
+                cv2.rectangle(dbg,(x0,y0),(x1,y1),(0,255,0),2)
+                cv2.imwrite("/tmp/swap_debug_target.jpg", dbg)
+                cv2.imwrite("/tmp/swap_debug_out.jpg", out)
+            except Exception as e:
+                print(f"[faceswap][debug] save failed: {e}", flush=True)
+
         return out
+
 
 # ===== Основной пайплайн =====
 class GenPipeline:
