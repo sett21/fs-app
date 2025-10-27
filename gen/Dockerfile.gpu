@@ -61,6 +61,7 @@ PY
 
 # Приложение
 WORKDIR /app
+ENV PYTHONPATH="/app:${PYTHONPATH}"
 COPY . /app/
 EXPOSE 8081
 

@@ -3,7 +3,7 @@ from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import Response, PlainTextResponse
 import numpy as np, cv2, io, time
 from PIL import Image
-from pipeline import GenPipeline
+from gen.pipeline import GenPipeline
 
 app = FastAPI()
 pipe = GenPipeline()
