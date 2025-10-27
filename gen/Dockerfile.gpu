@@ -1,5 +1,5 @@
-# ===== CUDA 12.2 + cuDNN runtime (Ubuntu 22.04) =====
-FROM nvidia/cuda:12.2.0-cudnn8-runtime-ubuntu22.04
+# ===== CUDA 12.1 + cuDNN8 runtime (Ubuntu 22.04) =====
+FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
@@ -15,12 +15,12 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-dev \
     git curl ca-certificates \
-    libgl1 libglib2.0-0 build-essential && \
-    rm -rf /var/lib/apt/lists/*
+    libgl1 libglib2.0-0 build-essential \
+ && rm -rf /var/lib/apt/lists/*
 
 RUN python3 -m pip install --upgrade pip
 
-# Torch/xformers под CUDA 12.1 (совместимы с CUDA 12.2 runtime)
+# PyTorch/xformers под CUDA 12.1
 RUN pip3 install --no-cache-dir \
       torch==2.3.1 torchvision==0.18.1 \
       --index-url https://download.pytorch.org/whl/cu121 && \
@@ -29,16 +29,16 @@ RUN pip3 install --no-cache-dir \
       --index-url https://download.pytorch.org/whl/cu121 && \
     pip3 uninstall -y torchvision || true
 
-# !!! Очень важно: удалить любые прежние onnxruntime*, поставить cu12-сборку 1.18.0
+# Чистая установка ORT GPU (cu12)
 RUN pip3 uninstall -y onnxruntime-gpu onnxruntime || true && \
     pip3 install --no-cache-dir onnxruntime-gpu==1.18.0
 
-# Быстрая валидация: провайдер CUDA должен присутствовать (провал билда, если нет)
+# Проверка на этапе билда: должен быть CUDAExecutionProvider
 RUN python3 - <<'PY'
 import onnxruntime as ort
-prov = ort.get_available_providers()
-print("ORT providers:", prov)
-assert "CUDAExecutionProvider" in prov, f"CUDA provider not available: {prov}"
+p = ort.get_available_providers()
+print("ORT providers:", p)
+assert "CUDAExecutionProvider" in p, f"CUDA provider not available: {p}"
 PY
 
 # Остальные зависимости
