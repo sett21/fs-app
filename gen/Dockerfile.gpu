@@ -1,8 +1,6 @@
-# ===== Base image: CUDA 11.8 runtime (Ubuntu 22.04) =====
-FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
+# ===== CUDA 12.2 runtime (Ubuntu 22.04) =====
+FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04
 
-
-# ===== Env =====
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
     PYTHONUNBUFFERED=1 \
@@ -13,7 +11,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128 \
     OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 
-# ===== System deps =====
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-dev \
     git curl ca-certificates \
@@ -23,38 +20,36 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN python3 -m pip install --upgrade pip
 
-# ===== PyTorch / CUDA 11.8 wheels =====
-# (ставим только torch; torchvision не нужен)
+# Torch / xformers под CUDA 12.1 (совместимо с CUDA 12.2 runtime)
 RUN pip3 install --no-cache-dir \
-      torch==2.3.1 \
-      --index-url https://download.pytorch.org/whl/cu118 \
+      torch==2.3.1 torchvision==0.18.1 \
+      --index-url https://download.pytorch.org/whl/cu121 \
  && pip3 install --no-cache-dir \
       xformers==0.0.27.post2 \
-      --index-url https://download.pytorch.org/whl/cu118
+      --index-url https://download.pytorch.org/whl/cu121
 
-# ===== ONNX Runtime GPU (под CUDA 11.x) =====
-RUN pip3 install --no-cache-dir \
-      onnxruntime-gpu==1.17.1
+# На всякий случай — удалить torchvision (мы его не используем)
+RUN pip3 uninstall -y torchvision || true
 
-# ===== Остальные Python-зависимости =====
+# Остальные зависимости
 RUN pip3 install --no-cache-dir \
       fastapi==0.115.0 uvicorn[standard]==0.30.6 \
       pillow==10.4.0 \
       numpy==1.26.4 \
       opencv-python-headless==4.10.0.84 \
       mediapipe==0.10.14 \
+      onnxruntime-gpu==1.18.0 \
       insightface==0.7.3 \
       diffusers==0.30.0 transformers==4.44.2 accelerate==0.34.2 \
-      protobuf==4.25.3 safetensors==0.4.5 \
+      protobuf==4.25.3 \
+      safetensors==0.4.5 \
       python-multipart==0.0.9
 
-# ===== App =====
 WORKDIR /app
-COPY . /app/
+COPY gen/ /app/
 
 EXPOSE 8081
 
-# ===== Entrypoint =====
 CMD uvicorn server:app \
     --host 0.0.0.0 --port 8081 \
     --log-level info --access-log \

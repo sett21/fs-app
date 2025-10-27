@@ -1,77 +1,87 @@
-version: "3.9"
-
+# Compose V2 (без поля version)
 services:
   gen:
     build:
-      context: ./gen
+      context: .
       dockerfile: Dockerfile.gpu
-    image: postcard-gen:gpu
-    runtime: nvidia
+    image: postcard-selfie-gen:gpu
     ports:
       - "8081:8081"
-    volumes:
-      - ./gen/models:/models:ro
-      - hf_cache:/root/.cache/huggingface
+    # требуется Docker с nvidia-container-toolkit
+    deploy: {}
+    gpus: all
     environment:
-      # базовые
       PYTHONUNBUFFERED: "1"
-      HF_HUB_ENABLE_HF_TRANSFER: "0"
-      TRANSFORMERS_NO_TORCHVISION: "1"
-      TOKENIZERS_PARALLELISM: "false"
-      PYTORCH_CUDA_ALLOC_CONF: "max_split_size_mb:128"
+
+      # Torch/threads
       TORCH_THREADS: "4"
       OMP_NUM_THREADS: "1"
       OPENBLAS_NUM_THREADS: "1"
       MKL_NUM_THREADS: "1"
+      TOKENIZERS_PARALLELISM: "false"
+      PYTORCH_CUDA_ALLOC_CONF: "max_split_size_mb:128"
+      TRANSFORMERS_NO_TORCHVISION: "1"
+      HF_HUB_ENABLE_HF_TRANSFER: "0"
 
-      # модель и режимы
+      # SD / Inpaint
       INPAINT_REPO: "runwayml/stable-diffusion-inpainting"
-      USE_CPU: "0"
-      SKIP_INPAINT: "0"
-      FALLBACK_INPAINT: ""
-      MAX_SIDE: "1280"
+      TORCH_dtype: "fp16"
+      MAX_SIDE: "1600"
+      STEPS: "22"
+      GUIDANCE: "4.0"
+      STRENGTH: "0.46"
 
-      # SD-параметры
-      STEPS: "18"
-      GUIDANCE: "4.5"
-      STRENGTH: "0.48"
+      # Патч-инпейнт
+      INPAINT_LONG: "1400"
+      INPAINT_PAD_PCT: "0.08"
+      MASK_GROW: "4"
 
-      # кроп-инпейнт
-      INPAINT_LONG: "1024"
-      INPAINT_PAD_PCT: "0.06"
-      MASK_GROW: "3"
-
-      # край/альфа/контакт
-      RING_IN_PCT: "0.004"
-      RING_OUT_PCT: "0.012"
+      # Кромка/контакт
+      RING_IN_PCT: "0.0035"
+      RING_OUT_PCT: "0.010"
+      EDGE_SNAP_ITERS: "2"
+      RIM_SHADE: "0.045"
       SEAMLESS_EDGE: "1"
-      EDGE_SNAP_ITERS: "1"   # <-- была опечатка
 
-      # визуальные мелочи
-      RIM_SHADE: "0.06"
-      FINGER_DETAIL_GAIN: "0.35"
+      # Детали кожи/зерно
       FINGER_DETAIL_SIGMA: "1.1"
-      GRAIN_STRENGTH: "0.012"
+      FINGER_DETAIL_GAIN: "0.38"
+      GRAIN_STRENGTH: "0.010"
 
-      # эффекты страницы
+      # Эффект страницы
       PAGE_EFFECT: "1"
       PAGE_SIDE: "right"
-      PAGE_INNER_PX: "16"
-      PAGE_SHADE: "0.06"
+      PAGE_INNER_PX: "14"
+      PAGE_SHADE: "0.05"
       PAGE_STRIPES: "1"
 
-      # FaceSwap
+      # Faceswap
       DISABLE_FACE_SWAP: "0"
-      SWAP_MODE: "after"
-      INSIGHTFACE_DET_SIZE: "640"
+      SWAP_MODE: "before"
+      INSIGHTFACE_DET_SIZE: "800"
       FACE_MODEL_PATH: "/models/inswapper_128.onnx"
       DISABLE_HANDS: "0"
       DISABLE_FACEMESH: "0"
 
-    command: >
-      uvicorn server:app --host 0.0.0.0 --port 8081
-      --log-level info --access-log
-      --timeout-keep-alive 120 --timeout-graceful-shutdown 120
+      # Отладка
+      SAVE_DEBUG: "0"
+      SKIP_INPAINT: "0"
+      FALLBACK_INPAINT: "0"
+      OUTPUT_FORMAT: "png"
+      USE_CPU: "0"
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8081/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 120s
+
+    volumes:
+      - ./gen/models:/models:ro
+      - hf_cache:/root/.cache/huggingface
+      - /tmp:/tmp
+
     restart: unless-stopped
 
 volumes:
