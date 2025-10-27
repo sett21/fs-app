@@ -1,9 +1,10 @@
 from dataclasses import dataclass
 import os
-from tkinter import Image
+
 from typing import Optional, Tuple
 import cv2, numpy as np
 import mediapipe as mp
+from PIL import Image
 
 @dataclass
 class _HairCfg:
