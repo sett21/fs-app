@@ -46,7 +46,7 @@ RUN pip3 install --no-cache-dir \
       python-multipart==0.0.9
 
 WORKDIR /app
-COPY gen/ /app/
+COPY . /app/
 
 EXPOSE 8081
 
