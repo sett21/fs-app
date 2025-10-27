@@ -3,6 +3,7 @@ FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PYTHONUNBUFFERED=1 \
     HF_HUB_ENABLE_HF_TRANSFER=0 \
     TRANSFORMERS_NO_TORCHVISION=1 \
@@ -11,14 +12,15 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128 \
     OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 
-# Системные пакеты
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-dev \
-    git curl ca-certificates \
-    libgl1 libglib2.0-0 build-essential \
+    git curl ca-certificates libgl1 libglib2.0-0 build-essential \
  && rm -rf /var/lib/apt/lists/*
 
 RUN python3 -m pip install --upgrade pip
+
+# ★ Сразу фиксируем NumPy < 2, чтобы всё дальше собиралось на нём
+RUN pip3 install --no-cache-dir "numpy==1.26.4"
 
 # PyTorch/xformers под CUDA 12.1
 RUN pip3 install --no-cache-dir \
@@ -29,31 +31,31 @@ RUN pip3 install --no-cache-dir \
       --index-url https://download.pytorch.org/whl/cu121 && \
     pip3 uninstall -y torchvision || true
 
-# Чистая установка ORT GPU (cu12)
+# ★ ORT под CUDA12 (на уже зафиксированном NumPy 1.26)
 RUN pip3 uninstall -y onnxruntime-gpu onnxruntime || true && \
     pip3 install --no-cache-dir onnxruntime-gpu==1.18.0
 
-# Проверка на этапе билда: должен быть CUDAExecutionProvider
+# ★ Проверка провайдеров ORT — теперь импорт пройдёт
 RUN python3 - <<'PY'
-import onnxruntime as ort
-p = ort.get_available_providers()
-print("ORT providers:", p)
-assert "CUDAExecutionProvider" in p, f"CUDA provider not available: {p}"
+import numpy, onnxruntime as ort
+print("NumPy:", numpy.__version__)
+print("ORT providers:", ort.get_available_providers())
+assert "CUDAExecutionProvider" in ort.get_available_providers()
 PY
 
-# Остальные зависимости
-RUN pip3 install --no-cache-dir \
+# Остальные зависимости (не даём тащить новый NumPy)
+RUN pip3 install --no-cache-dir --upgrade-strategy only-if-needed \
       fastapi==0.115.0 uvicorn[standard]==0.30.6 \
-      pillow==10.4.0 numpy==1.26.4 \
+      pillow==10.4.0 \
       opencv-python-headless==4.10.0.84 \
       mediapipe==0.10.14 \
       insightface==0.7.3 \
       diffusers==0.30.0 transformers==4.44.2 accelerate==0.34.2 \
-      protobuf==4.25.3 safetensors==0.4.5 python-multipart==0.0.9
+      protobuf==4.25.3 safetensors==0.4.5 python-multipart==0.0.9 \
+  && python3 -c "import numpy as np; print('NumPy still pinned:', np.__version__)"
 
 WORKDIR /app
 COPY . /app/
-
 EXPOSE 8081
 
 CMD uvicorn server:app \
