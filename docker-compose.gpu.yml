@@ -1,86 +1,77 @@
+version: "3.9"
+
 services:
   gen:
-    image: selfie-postcard-gen-gpu:latest
     build:
-      context: ./gen
+      context: .
       dockerfile: Dockerfile.gpu
+    image: postcard-gen:gpu
+    runtime: nvidia
     ports:
       - "8081:8081"
-  environment:
-    PYTHONUNBUFFERED: "1"
-    HF_HUB_ENABLE_HF_TRANSFER: "0"
-    TRANSFORMERS_NO_TORCHVISION: "1"
-    TOKENIZERS_PARALLELISM: "false"
-    PYTORCH_CUDA_ALLOC_CONF: "max_split_size_mb:128"
-
-    # Производительность
-    TORCH_THREADS: "4"
-    OMP_NUM_THREADS: "1"
-    OPENBLAS_NUM_THREADS: "1"
-    MKL_NUM_THREADS: "1"
-
-    # Модель и качество
-    USE_CPU: "0"                           # GPU
-    INPAINT_REPO: "runwayml/stable-diffusion-inpainting"   # SD1.5 inpaint; можно поменять при желании
-    TORCH_dtype: "fp16"
-    MAX_SIDE: "1280"                       # входной предел по длинной стороне
-    STEPS: "24"
-    GUIDANCE: "4.2"
-    STRENGTH: "0.42"
-    INPAINT_SIDE_LIMIT: "0"               # 0 = без даунскейла (или поставь 1024..1536 на слабом GPU)
-
-    INPAINT_LONG: "1024"
-    INPAINT_PAD_PCT: "0.06"
-    MASK_GROW: "3"
-
-    # Поведение по краям
-    RING_IN_PCT: "0.0035"     # было 0.004 — ещё чуть уже кромка
-    RING_OUT_PCT: "0.009"     # было 0.012
-    SEAMLESS_EDGE: "1"
-    EDGE_SNAP_EDGE_SNAP_ITERS: "1"
-
-    # Эффект «страницы»
-    PAGE_EFFECT: "1"
-    PAGE_SIDE: "right"                     # right|left|top|bottom
-    PAGE_INNER_PX: "16"
-    PAGE_SHADE: "0.06"
-    PAGE_STRIPES: "1"
-
-    # Контакт-тень и «фото-зерно»
-    RIM_SHADE: "0.05"
-    GRAIN_STRENGTH: "0.012"
-
-    # Hand / Facemesh
-    DISABLE_HANDS: "0"
-    DISABLE_FACEMESH: "0"
-    FINGER_DETAIL_GAIN: "0.35"
-    FINGER_DETAIL_SIGMA: "1.1"
-
-    # FaceSwap
-    SWAP_MODE: "before"                    # before|after
-    DISABLE_FACE_SWAP: "0"
-    INSIGHTFACE_DET_SIZE: "1024"           # устойчивее детекция; можно 1280 для мелких лиц
-    FACE_MODEL_PATH: "/models/inswapper_128.onnx"
-
-    # Отладка / фоллбеки
-    SKIP_INPAINT: "0"                      # 1 — отключить SD-inpaint
-    FALLBACK_INPAINT: "0"                  # "cv" или "1" — OpenCV inpaint фоллбек
-    SAVE_DEBUG: "0"
-
     volumes:
       - ./gen/models:/models:ro
       - hf_cache:/root/.cache/huggingface
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - capabilities: [gpu]
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8081/healthz || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 30
-      start_period: 120s
+    environment:
+      # базовые
+      PYTHONUNBUFFERED: "1"
+      HF_HUB_ENABLE_HF_TRANSFER: "0"
+      TRANSFORMERS_NO_TORCHVISION: "1"
+      TOKENIZERS_PARALLELISM: "false"
+      PYTORCH_CUDA_ALLOC_CONF: "max_split_size_mb:128"
+      TORCH_THREADS: "4"
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+
+      # модель и режимы
+      INPAINT_REPO: "runwayml/stable-diffusion-inpainting"
+      USE_CPU: "0"
+      SKIP_INPAINT: "0"
+      FALLBACK_INPAINT: ""
+      MAX_SIDE: "1280"
+
+      # SD-параметры
+      STEPS: "18"
+      GUIDANCE: "4.5"
+      STRENGTH: "0.48"
+
+      # кроп-инпейнт
+      INPAINT_LONG: "1024"
+      INPAINT_PAD_PCT: "0.06"
+      MASK_GROW: "3"
+
+      # край/альфа/контакт
+      RING_IN_PCT: "0.004"
+      RING_OUT_PCT: "0.012"
+      SEAMLESS_EDGE: "1"
+      EDGE_SNAP_ITERS: "1"   # <-- была опечатка
+
+      # визуальные мелочи
+      RIM_SHADE: "0.06"
+      FINGER_DETAIL_GAIN: "0.35"
+      FINGER_DETAIL_SIGMA: "1.1"
+      GRAIN_STRENGTH: "0.012"
+
+      # эффекты страницы
+      PAGE_EFFECT: "1"
+      PAGE_SIDE: "right"
+      PAGE_INNER_PX: "16"
+      PAGE_SHADE: "0.06"
+      PAGE_STRIPES: "1"
+
+      # FaceSwap
+      DISABLE_FACE_SWAP: "0"
+      SWAP_MODE: "before"
+      INSIGHTFACE_DET_SIZE: "640"
+      FACE_MODEL_PATH: "/models/inswapper_128.onnx"
+      DISABLE_HANDS: "0"
+      DISABLE_FACEMESH: "0"
+
+    command: >
+      uvicorn server:app --host 0.0.0.0 --port 8081
+      --log-level info --access-log
+      --timeout-keep-alive 120 --timeout-graceful-shutdown 120
     restart: unless-stopped
 
 volumes:
