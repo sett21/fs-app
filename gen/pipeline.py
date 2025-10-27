@@ -365,6 +365,11 @@ class FaceSwapper:
         self.app.prepare(ctx_id=ctx, det_size=(det, det))
         providers = ['CPUExecutionProvider'] if ctx == -1 else ['CUDAExecutionProvider','CPUExecutionProvider']
         self.swapper = insightface.model_zoo.get_model(model_path, providers=providers)
+        try:
+            prov = getattr(self.swapper, "session").get_providers()
+            print(f"[insightface] ORT providers: {prov}", flush=True)
+        except Exception as e:
+            print(f"[insightface] providers? {e}", flush=True)
 
         # facemesh по флагу
         if os.getenv("DISABLE_FACEMESH", "0") == "1":
@@ -425,9 +430,17 @@ class FaceSwapper:
         return ring
 
     def swap(self, target_bgr: np.ndarray, src_face_bgr: np.ndarray) -> np.ndarray:
+        
         tar_faces = self.app.get(target_bgr)
         src_faces = self.app.get(src_face_bgr)
-        if not tar_faces or not src_faces:
+        print(f"[faceswap] found target={len(tar_faces)} src={len(src_faces)}", flush=True)
+        # выбирать самое крупное лицо в кадре
+        def _pick_biggest(faces):
+            if not faces: return None
+            return max(faces, key=lambda f: (f.bbox[2]-f.bbox[0])*(f.bbox[3]-f.bbox[1]))
+        tar = _pick_biggest(tar_faces); src = _pick_biggest(src_faces)
+        if tar is None or src is None:
+            print("[faceswap] no faces -> skip", flush=True)
             return target_bgr
 
         tar = tar_faces[0]; src = src_faces[0]
