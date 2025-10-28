@@ -59,8 +59,8 @@ services:
       DISABLE_FACE_SWAP: "0"
       SWAP_MODE: "after"
       SWAP_ENFORCE_FINAL: "1"
-      INSIGHTFACE_DET_SIZE: "1280"    # покрупнее
-      INSIGHTFACE_DET_THRESH: "0.2"   # понизим порог
+      INSIGHTFACE_DET_SIZE: "640"     # ретина лучше ловит source на меньшем разрешении
+      INSIGHTFACE_DET_THRESH: "0.25"  # чуть выше, чтобы не ловить шум
       SWAP_EAR_EXPAND_PX: "22"        # больше ушей
       SWAP_HAIR_EXPAND_PX: "18"       # больше волос
       SWAP_CHIN_CUT_PX: "6"           # низ чутка отрезаем
