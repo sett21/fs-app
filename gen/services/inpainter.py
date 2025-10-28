@@ -1,5 +1,5 @@
 import os
-from tkinter import Image
+from PIL import Image
 from typing import Optional
 from diffusers import StableDiffusionXLInpaintPipeline, StableDiffusionInpaintPipeline
 import numpy as torch
