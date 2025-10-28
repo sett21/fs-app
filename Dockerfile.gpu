@@ -31,20 +31,25 @@ RUN printf "numpy<2\n" > /etc/pip-constraints.txt && \
 RUN python3 -m pip install --upgrade pip && \
     pip3 install --no-cache-dir numpy==1.26.4
 
-# PyTorch/xformers под CUDA 12.1
-RUN pip3 install --no-cache-dir \
-      torch==2.3.1 torchvision==0.18.1 \
-      --index-url https://download.pytorch.org/whl/cu121 && \
-    pip3 install --no-cache-dir \
-      xformers==0.0.27.post2 \
-      --index-url https://download.pytorch.org/whl/cu121 && \
+# PyTorch/xformers под CUDA 12.1 (адаптивно для архитектуры)
+RUN ARCH=$(uname -m); \
+    if [ "$ARCH" = "aarch64" ]; then \
+        pip3 install --no-cache-dir torch==2.3.1 torchvision==0.18.1 --index-url https://download.pytorch.org/whl/cu121-aarch64 && \
+        pip3 install --no-cache-dir xformers==0.0.27.post2 --index-url https://download.pytorch.org/whl/cu121-aarch64; \
+    else \
+        pip3 install --no-cache-dir torch==2.3.1 torchvision==0.18.1 --index-url https://download.pytorch.org/whl/cu121 && \
+        pip3 install --no-cache-dir xformers==0.0.27.post2 --index-url https://download.pytorch.org/whl/cu121; \
+    fi && \
     pip3 uninstall -y torchvision || true
 
-# ---- ONNX Runtime GPU: именно сборка под CUDA12 с официального индекса ORT ----
-RUN pip3 uninstall -y onnxruntime onnxruntime-gpu || true && \
-    pip3 install --no-cache-dir \
-      --extra-index-url https://download.onnxruntime.ai/ \
-      onnxruntime-gpu==1.18.0
+# ---- ONNX Runtime GPU: архитектурно-зависимое ----
+RUN ARCH=$(uname -m); \
+    pip3 uninstall -y onnxruntime onnxruntime-gpu || true; \
+    if [ "$ARCH" = "aarch64" ]; then \
+        pip3 install --no-cache-dir onnxruntime==1.18.0; \
+    else \
+        pip3 install --no-cache-dir --extra-index-url https://download.onnxruntime.ai/ onnxruntime-gpu==1.18.0; \
+    fi
 
 # Остальной стек
 RUN pip3 install --no-cache-dir --upgrade-strategy only-if-needed \
