@@ -106,6 +106,7 @@ class FaceSwapper:
         self.swap_sharp_gain = float(os.getenv("SWAP_SHARP_GAIN", "0.25"))
         self.swap_select = os.getenv("SWAP_SELECT", "largest").strip().lower()
         self.swap_index = max(0, int(os.getenv("SWAP_INDEX", "0")))
+        self.force_full_overlay = os.getenv("SWAP_FORCE_FULL", "0") == "1"
 
     # ---------- Утилиты ----------
     def _get_detector(self, det_size: int) -> insightface.app.FaceAnalysis:
@@ -324,6 +325,15 @@ class FaceSwapper:
 
         diff0 = float(np.mean(np.abs(rough.astype(np.float32) - target_bgr.astype(np.float32))))
         print(f"[faceswap] rough Δ={diff0:.2f}", flush=True)
+
+        if self.force_full_overlay:
+            print("[faceswap] SWAP_FORCE_FULL=1 -> используем результат swapper без маски", flush=True)
+            if os.getenv("SAVE_DEBUG", "0") == "1":
+                try:
+                    cv2.imwrite("/tmp/debug_faceswap_force_full.jpg", rough)
+                except Exception:
+                    pass
+            return rough
 
         base_mask, chin_y = self._facemesh_mask(rough)
         if base_mask.max() == 0:
