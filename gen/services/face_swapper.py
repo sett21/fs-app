@@ -160,6 +160,9 @@ class FaceSwapper:
 
         # (опция) усилить волосы источника узкой полосой над лбом
         out = matched
+        src_for_blend = src_face_bgr
+        if src_for_blend.shape[:2] != out.shape[:2]:
+            src_for_blend = cv2.resize(src_for_blend, (out.shape[1], out.shape[0]), interpolation=cv2.INTER_LINEAR)
         if self.cfg.use_hair_from_src:
             h, w = out.shape[:2]
             upper = np.zeros_like(ext_mask)
@@ -168,7 +171,7 @@ class FaceSwapper:
             hair_band = cv2.bitwise_and(ext_mask, upper)
             hair_band = cv2.GaussianBlur(hair_band, (0,0), 1.2)
             a = (hair_band.astype(np.float32)/255.0)[:,:,None] * float(self.cfg.alpha)
-            out = (src_face_bgr.astype(np.float32)*a + out.astype(np.float32)*(1-a)).astype(np.uint8)
+            out = (src_for_blend.astype(np.float32)*a + out.astype(np.float32)*(1-a)).astype(np.uint8)
 
         # вернуть очки/резкие края от таргета (если есть)
         gray = cv2.cvtColor(target_bgr, cv2.COLOR_BGR2GRAY)

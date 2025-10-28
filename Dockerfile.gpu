@@ -18,7 +18,7 @@ RUN set -eux; \
     apt-get -y -o Acquire::Retries=5 -o Acquire::http::Timeout=30 install --no-install-recommends \
         python3 python3-pip python3-dev git curl ca-certificates \
         libgl1 libglib2.0-0 build-essential \
-        libcublas11 libcublaslt11; \
+        libcublas11 libcublaslt11 libcufft10; \
     rm -rf /var/lib/apt/lists/*
 
 # ---------- Глобальный constraint: не даём NumPy уйти в 2.x ----------
