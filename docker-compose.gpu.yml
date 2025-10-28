@@ -76,7 +76,7 @@ services:
 
 
       # Отладка
-      SAVE_DEBUG: "0"
+      SAVE_DEBUG: "1"
       SKIP_INPAINT: "0"
       FALLBACK_INPAINT: "0"
       OUTPUT_FORMAT: "png"
