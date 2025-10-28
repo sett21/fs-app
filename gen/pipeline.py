@@ -69,6 +69,7 @@ class GenPipeline:
 
         quad_center = (float(quad[:,0].mean()), float(quad[:,1].mean()))
         swap_kwargs = {"quad_center": quad_center}
+        enforce_final_swap = os.getenv("SWAP_ENFORCE_FINAL", "1") == "1"
 
         # ===== 2) Faceswap (до) =====
         if not self.disable_swap and self.swap_mode == "before":
@@ -234,12 +235,19 @@ class GenPipeline:
             )
 
         # faceswap (после), если нужно
-        if not self.disable_swap and self.swap_mode == "after":
-            print("[faceswap] mode=after", flush=True)
-            try:
-                final_bgr = self.swapper.swap(final_bgr, face_bgr, **swap_kwargs)
-            except Exception as e:
-                print(f"[faceswap][after] failed: {e}", flush=True)
+        if not self.disable_swap:
+            if self.swap_mode == "after":
+                print("[faceswap] mode=after", flush=True)
+                try:
+                    final_bgr = self.swapper.swap(final_bgr, face_bgr, **swap_kwargs)
+                except Exception as e:
+                    print(f"[faceswap][after] failed: {e}", flush=True)
+            elif self.swap_mode == "before" and enforce_final_swap:
+                print("[faceswap] mode=before-final", flush=True)
+                try:
+                    final_bgr = self.swapper.swap(final_bgr, face_bgr, **swap_kwargs)
+                except Exception as e:
+                    print(f"[faceswap][before-final] failed: {e}", flush=True)
 
         # отладка
         if os.getenv("SAVE_DEBUG","0") == "1":
