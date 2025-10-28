@@ -63,12 +63,23 @@ class FaceSwapper:
         self.chin_cut_px     = int(os.getenv("SWAP_CHIN_CUT_PX", "6"))
         self.poisson_full    = os.getenv("SWAP_POISSON_FULL", "1") == "1"
         self.swap_sharp_gain = float(os.getenv("SWAP_SHARP_GAIN", "0.25"))
+        self.swap_select     = os.getenv("SWAP_SELECT", "largest").strip().lower()
+        self.swap_index      = max(0, int(os.getenv("SWAP_INDEX", "0")))
 
     # ---------- Внутрянка ----------
-    def _pick_target_face(self, faces, prefer_xy=None):
+    def _pick_target_face(self, faces, img_shape=None, prefer_xy=None):
         """Выбираем лицо: либо ближайшее к prefer_xy, либо крупное/фронтальное."""
         if not faces:
             return None
+        mode = self.swap_select
+        mode_center = (mode == "center")
+        if mode == "index":
+            idx = min(self.swap_index, len(faces)-1)
+            return faces[idx]
+        if mode_center:
+            if prefer_xy is None and img_shape is not None:
+                h, w = img_shape
+                prefer_xy = (w/2.0, h/2.0)
         if prefer_xy is not None:
             qx, qy = prefer_xy
             def _dist(f):
@@ -88,7 +99,10 @@ class FaceSwapper:
                 v = abs((kps[0][1]-kps[1][1]))/d
                 fr = 1.0 - min(1.0, v)
             return area*(1.0 + 0.3*fr)
-        return sorted(faces, key=score, reverse=True)[0]
+        if mode == "largest":
+            return sorted(faces, key=score, reverse=True)[0]
+        # default: first (already sorted by confidence inside insightface)
+        return faces[0]
 
     def _facemesh_mask(self, bgr: np.ndarray):
         """Возвращает (base_mask, chin_y). base_mask — овал из FaceMesh."""
@@ -141,17 +155,29 @@ class FaceSwapper:
         if not tar_faces or not src_faces:
             return target_bgr
 
-        tar = self._pick_target_face(tar_faces, prefer_xy=quad_center)
-        src = self._pick_target_face(src_faces, prefer_xy=None)
+        if not tar_faces:
+            print("[faceswap] target faces not found", flush=True)
+            return target_bgr
+        if not src_faces:
+            print("[faceswap] source faces not found", flush=True)
+            return target_bgr
+
+        tar = self._pick_target_face(tar_faces, img_shape=target_bgr.shape[:2], prefer_xy=quad_center)
+        src = self._pick_target_face(src_faces, img_shape=src_face_bgr.shape[:2], prefer_xy=None)
         if tar is None or src is None:
+            print("[faceswap] selection failed", flush=True)
             return target_bgr
 
         # базовый своп
         rough = self.swapper.get(target_bgr.copy(), tar, src, paste_back=True)
+        if rough is None:
+            print("[faceswap] swapper returned None", flush=True)
+            return target_bgr
 
         # базовая маска + расширенная маска
         base_mask, chin_y = self._facemesh_mask(rough)
         if base_mask.max()==0:
+            print("[faceswap] facemesh mask empty -> returning rough swap", flush=True)
             return rough
         ext_mask = self._extended_mask(base_mask, chin_y)
 
@@ -208,5 +234,11 @@ class FaceSwapper:
         # вернуть очки/грани из таргета
         if glasses_a.max() > 0:
             out = (target_bgr.astype(np.float32)*glasses_a + out.astype(np.float32)*(1-glasses_a)).astype(np.uint8)
+
+        try:
+            diff = float(np.mean(np.abs(out.astype(np.float32) - target_bgr.astype(np.float32))))
+            print(f"[faceswap] target_faces={len(tar_faces)} src_faces={len(src_faces)} diff={diff:.2f}", flush=True)
+        except Exception:
+            pass
 
         return out
