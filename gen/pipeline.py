@@ -2,7 +2,7 @@ import os
 
 from gen.services.face_swapper import FaceSwapper
 from gen.services.inpainter import Inpainter
-from gen.utils.utils import add_fine_grain, apply_page_stack, bbox_from_mask, bgr_from_pil, build_contact_masks_tight, detect_green_quad, green_defringe, hand_mask_bgr, laplacian_blend, lin_to_srgb, pil_from_bgr, refine_alpha_with_edges, resize_limit, ring_grad, srgb_to_lin, texture_reinject
+from gen.utils.utils import add_fine_grain, apply_page_stack, bbox_from_mask, bgr_from_pil, build_contact_masks_tight, detect_green_quad, green_defringe, hand_mask_bgr, laplacian_blend, lin_to_srgb, pil_from_bgr, refine_alpha_with_edges, resize_limit, ring_grad, srgb_to_lin, texture_reinject, warp_into_quad
 os.environ.setdefault("TRANSFORMERS_NO_TORCHVISION", "1")
 os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "0")
 
