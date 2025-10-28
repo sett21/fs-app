@@ -61,25 +61,22 @@ class GenPipeline:
 
         H, W = selfie_bgr.shape[:2]
 
-        # ===== 1) Faceswap (до) =====
-        if not self.disable_swap and self.swap_mode == "before":
-            print("[faceswap] mode=before", flush=True)
-            try:
-                selfie_bgr = self.swapper.swap(selfie_bgr, face_bgr)
-            except Exception as e:
-                print(f"[faceswap][before] failed: {e}", flush=True)
-
-        # ===== 2) Прямоугольник =====
+        # ===== 1) Прямоугольник =====
         quad = detect_green_quad(selfie_bgr, "#00ff84")
-
-        quad_center = (float(quad[:,0].mean()), float(quad[:,1].mean()))
-        # если SWAP_MODE=before
-        selfie_bgr = self.swapper.swap(selfie_bgr, face_bgr, quad_center=quad_center)
-        # ... если SWAP_MODE=after — при втором вызове тоже передай quad_center:
-        final_bgr = self.swapper.swap(final_bgr, face_bgr, quad_center=quad_center)
 
         if quad is None or quad.shape != (4,2):
             raise RuntimeError("Green rectangle (#00ff84) not found or invalid")
+
+        quad_center = (float(quad[:,0].mean()), float(quad[:,1].mean()))
+        swap_kwargs = {"quad_center": quad_center}
+
+        # ===== 2) Faceswap (до) =====
+        if not self.disable_swap and self.swap_mode == "before":
+            print("[faceswap] mode=before", flush=True)
+            try:
+                selfie_bgr = self.swapper.swap(selfie_bgr, face_bgr, **swap_kwargs)
+            except Exception as e:
+                print(f"[faceswap][before] failed: {e}", flush=True)
 
         # ===== 3) «Книжный» край =====
         if self.page_effect:
@@ -157,7 +154,8 @@ class GenPipeline:
             final_bgr = init
             if not self.disable_swap and self.swap_mode == "after":
                 print("[faceswap] mode=after", flush=True)
-                try: final_bgr = self.swapper.swap(final_bgr, face_bgr)
+                try:
+                    final_bgr = self.swapper.swap(final_bgr, face_bgr, **swap_kwargs)
                 except Exception as e: print(f"[faceswap][after][skip_inpaint] failed: {e}", flush=True)
             final_bgr = add_fine_grain(final_bgr, strength=float(os.getenv("GRAIN_STRENGTH","0.012")))
             print(f"[timing] total={time.time()-t0:.2f}s", flush=True)
@@ -173,7 +171,8 @@ class GenPipeline:
             final_bgr = inpainted
             if not self.disable_swap and self.swap_mode == "after":
                 print("[faceswap] mode=after", flush=True)
-                try: final_bgr = self.swapper.swap(final_bgr, face_bgr)
+                try:
+                    final_bgr = self.swapper.swap(final_bgr, face_bgr, **swap_kwargs)
                 except Exception as e: print(f"[faceswap][after][cv_fallback] {e}", flush=True)
             final_bgr = add_fine_grain(final_bgr, strength=float(os.getenv("GRAIN_STRENGTH","0.012")))
             print(f"[timing] total={time.time()-t0:.2f}s", flush=True)
@@ -238,7 +237,7 @@ class GenPipeline:
         if not self.disable_swap and self.swap_mode == "after":
             print("[faceswap] mode=after", flush=True)
             try:
-                final_bgr = self.swapper.swap(final_bgr, face_bgr)
+                final_bgr = self.swapper.swap(final_bgr, face_bgr, **swap_kwargs)
             except Exception as e:
                 print(f"[faceswap][after] failed: {e}", flush=True)
 
