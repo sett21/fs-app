@@ -150,46 +150,56 @@ class FaceSwapper:
 
     # ---------- Основной метод ----------
     def swap(self, target_bgr: np.ndarray, src_face_bgr: np.ndarray, quad_center=None) -> np.ndarray:
+        # 0) базовая диагностика
+        if target_bgr is None or src_face_bgr is None:
+            print("[faceswap] empty inputs", flush=True)
+            return target_bgr
+
+        # 1) детекция
         tar_faces = self.app.get(target_bgr)
         src_faces = self.app.get(src_face_bgr)
+        print(f"[faceswap] detected target={len(tar_faces)} src={len(src_faces)}", flush=True)
         if not tar_faces or not src_faces:
             return target_bgr
 
-        if not tar_faces:
-            print("[faceswap] target faces not found", flush=True)
-            return target_bgr
-        if not src_faces:
-            print("[faceswap] source faces not found", flush=True)
-            return target_bgr
-
+        # 2) выбор лиц
         tar = self._pick_target_face(tar_faces, img_shape=target_bgr.shape[:2], prefer_xy=quad_center)
         src = self._pick_target_face(src_faces, img_shape=src_face_bgr.shape[:2], prefer_xy=None)
         if tar is None or src is None:
             print("[faceswap] selection failed", flush=True)
             return target_bgr
+        tx1, ty1, tx2, ty2 = tar.bbox.astype(int)
+        sx1, sy1, sx2, sy2 = src.bbox.astype(int)
+        print(f"[faceswap] target bbox=({tx1},{ty1},{tx2},{ty2}) src bbox=({sx1},{sy1},{sx2},{sy2})", flush=True)
 
-        # базовый своп
+        # 3) сам свап
         rough = self.swapper.get(target_bgr.copy(), tar, src, paste_back=True)
         if rough is None:
             print("[faceswap] swapper returned None", flush=True)
             return target_bgr
 
-        # базовая маска + расширенная маска
+        # 3.1) быстрая метрика «что-то поменялось?»
+        diff0 = float(np.mean(np.abs(rough.astype(np.float32) - target_bgr.astype(np.float32))))
+        print(f"[faceswap] rough Δ={diff0:.2f}", flush=True)
+
+        # 4) facemesh-маска (если нет — всё равно вернём rough, чтобы не терять своп)
         base_mask, chin_y = self._facemesh_mask(rough)
-        if base_mask.max()==0:
-            print("[faceswap] facemesh mask empty -> returning rough swap", flush=True)
+        if base_mask.max() == 0:
+            print("[faceswap] facemesh mask empty -> return rough", flush=True)
             return rough
+
+        # 5) расширенная маска (уши/волосы вверх, низ подрезать)
         ext_mask = self._extended_mask(base_mask, chin_y)
 
-        # цветовая подгонка в расширенной маске
+        # 6) цветовая подгонка в расширенной маске
         matched = self._reinhard_to_ref(rough, target_bgr, ext_mask)
 
-        # (опция) усилить волосы источника узкой полосой над лбом
+        # 7) (опц.) подмешать волосы источника в верхней полосе
         out = matched
-        src_for_blend = src_face_bgr
-        if src_for_blend.shape[:2] != out.shape[:2]:
-            src_for_blend = cv2.resize(src_for_blend, (out.shape[1], out.shape[0]), interpolation=cv2.INTER_LINEAR)
         if self.cfg.use_hair_from_src:
+            src_for_blend = src_face_bgr
+            if src_for_blend.shape[:2] != out.shape[:2]:
+                src_for_blend = cv2.resize(src_for_blend, (out.shape[1], out.shape[0]), interpolation=cv2.INTER_LINEAR)
             h, w = out.shape[:2]
             upper = np.zeros_like(ext_mask)
             y0 = int(0.33*h) if chin_y is None else max(0, int(chin_y*0.35))
@@ -199,7 +209,7 @@ class FaceSwapper:
             a = (hair_band.astype(np.float32)/255.0)[:,:,None] * float(self.cfg.alpha)
             out = (src_for_blend.astype(np.float32)*a + out.astype(np.float32)*(1-a)).astype(np.uint8)
 
-        # вернуть очки/резкие края от таргета (если есть)
+        # 8) вернуть очки/резкие грани от таргета
         gray = cv2.cvtColor(target_bgr, cv2.COLOR_BGR2GRAY)
         edges = cv2.Canny(gray, 80, 160)
         edges = cv2.dilate(edges, cv2.getStructuringElement(cv2.MORPH_RECT,(3,3)), 1)
@@ -207,20 +217,19 @@ class FaceSwapper:
         glasses_mask = cv2.GaussianBlur(glasses_mask, (0,0), 1.2)
         glasses_a = (glasses_mask.astype(np.float32)/255.0)[:,:,None] * 0.85
 
-        # лёгкая резкость по всему лицу после цветовой подгонки
+        # 9) лёгкая резкость
         out = self._unsharp(out, sigma=0.8, amount=self.swap_sharp_gain)
 
-        # полноразмерный Poisson по расширенной маске — переносит уши/волосы
+        # 10) Poisson: полный по расширенной маске (переносит уши/волосы)
         if self.poisson_full:
             ys, xs = np.where(ext_mask>0)
             if len(xs) > 0:
                 center = (int(xs.mean()), int(ys.mean()))
                 try:
                     out = cv2.seamlessClone(out, target_bgr, ext_mask, center, cv2.MIXED_CLONE)
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"[faceswap][poisson_full] {e}", flush=True)
         elif self.cfg.poisson_face:
-            # fallback: узкий по границе, если полный отключён
             band = cv2.morphologyEx(ext_mask, cv2.MORPH_GRADIENT,
                                     cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(7,7)))
             ys, xs = np.where(ext_mask>0)
@@ -228,17 +237,15 @@ class FaceSwapper:
                 center = (int(xs.mean()), int(ys.mean()))
                 try:
                     out = cv2.seamlessClone(out, target_bgr, band, center, cv2.MIXED_CLONE)
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"[faceswap][poisson_edge] {e}", flush=True)
 
-        # вернуть очки/грани из таргета
+        # 11) вернуть очки поверх
         if glasses_a.max() > 0:
             out = (target_bgr.astype(np.float32)*glasses_a + out.astype(np.float32)*(1-glasses_a)).astype(np.uint8)
 
-        try:
-            diff = float(np.mean(np.abs(out.astype(np.float32) - target_bgr.astype(np.float32))))
-            print(f"[faceswap] target_faces={len(tar_faces)} src_faces={len(src_faces)} diff={diff:.2f}", flush=True)
-        except Exception:
-            pass
+        # финальная диагностика
+        diff1 = float(np.mean(np.abs(out.astype(np.float32) - target_bgr.astype(np.float32))))
+        print(f"[faceswap] final Δ={diff1:.2f}", flush=True)
 
         return out
