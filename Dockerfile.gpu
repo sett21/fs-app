@@ -23,8 +23,8 @@ RUN set -eux; \
         cuda-compat-12-1; \
     rm -rf /var/lib/apt/lists/*
 
-# ---------- Глобальный constraint: не даём NumPy уйти в 2.x ----------
-RUN printf "numpy<2\n" > /etc/pip-constraints.txt && \
+# ---------- Глобальный constraint: не даём NumPy уйти в 2.x и фиксируем ML-стеки ----------
+RUN printf "numpy<2\ntorch==2.3.1\ntorchvision==0.18.1\nxformers==0.0.27.post2\n" > /etc/pip-constraints.txt && \
     printf "[global]\nconstraint = /etc/pip-constraints.txt\n" > /etc/pip.conf
 
 # Свежий pip + зафиксированный NumPy (совместим со многими бинарными колёсами)
