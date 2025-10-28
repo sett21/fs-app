@@ -31,17 +31,47 @@ class FaceSwapper:
         home = os.getenv("INSIGHTFACE_HOME", os.path.expanduser("~/.insightface"))
         os.makedirs(os.path.join(home, "models"), exist_ok=True)
 
-        # Детектор лиц
-        self.app = insightface.app.FaceAnalysis(name="buffalo_l", root=home)
-        ctx = -1 if os.getenv("USE_CPU", "0") == "1" else 0
-        det = int(os.getenv("INSIGHTFACE_DET_SIZE", "896"))
-        self.app.prepare(ctx_id=ctx, det_size=(det, det))
-        try:
-            self.app.det_thresh = float(os.getenv("INSIGHTFACE_DET_THRESH", "0.5"))
-        except Exception:
-            pass
+        self.home = home
+        self.ctx = -1 if os.getenv("USE_CPU", "0") == "1" else 0
+        self.det_thresh_primary = float(os.getenv("INSIGHTFACE_DET_THRESH", "0.5"))
+        self.det_thresh_fallback = float(os.getenv("INSIGHTFACE_DET_THRESH_MIN", "0.25"))
 
-        providers = (["CPUExecutionProvider"] if ctx == -1 else ["CUDAExecutionProvider", "CPUExecutionProvider"])
+        det_primary = int(os.getenv("INSIGHTFACE_DET_SIZE", "896"))
+        det_sizes_env = os.getenv("INSIGHTFACE_DET_SIZES")
+        det_sizes = []
+        if det_sizes_env:
+            for chunk in det_sizes_env.replace(";", ",").split(","):
+                chunk = chunk.strip()
+                if not chunk:
+                    continue
+                try:
+                    val = int(chunk)
+                except ValueError:
+                    continue
+                if val > 0:
+                    det_sizes.append(val)
+        else:
+            det_sizes = [det_primary, 1024, 896, 768, 640]
+
+        if det_primary > 0 and det_primary not in det_sizes:
+            det_sizes.insert(0, det_primary)
+
+        # гарантируем fallback-набор, самый маленький — 640
+        if 640 not in det_sizes:
+            det_sizes.append(640)
+
+        seen = set()
+        self.det_sizes = []
+        for val in det_sizes:
+            if val <= 0 or val in seen:
+                continue
+            seen.add(val)
+            self.det_sizes.append(val)
+
+        # Детекторы храним в кэше по размеру
+        self._detectors: dict[int, insightface.app.FaceAnalysis] = {}
+
+        providers = (["CPUExecutionProvider"] if self.ctx == -1 else ["CUDAExecutionProvider", "CPUExecutionProvider"])
         self.swapper = insightface.model_zoo.get_model(model_path, providers=providers)
         print("[insightface] ORT providers:", providers, flush=True)
 
@@ -78,6 +108,18 @@ class FaceSwapper:
         self.swap_index = max(0, int(os.getenv("SWAP_INDEX", "0")))
 
     # ---------- Утилиты ----------
+    def _get_detector(self, det_size: int) -> insightface.app.FaceAnalysis:
+        det = self._detectors.get(det_size)
+        if det is None:
+            det = insightface.app.FaceAnalysis(name="buffalo_l", root=self.home)
+            det.prepare(ctx_id=self.ctx, det_size=(det_size, det_size))
+            try:
+                det.det_thresh = self.det_thresh_primary
+            except Exception:
+                pass
+            self._detectors[det_size] = det
+        return det
+
     def _rescale_faces(self, faces, scale: float):
         if scale == 1.0 or not faces:
             return faces
@@ -91,23 +133,48 @@ class FaceSwapper:
         return out
 
     def _detect_faces(self, img: np.ndarray):
-        faces = self.app.get(img)
+        for det_size in self.det_sizes:
+            detector = self._get_detector(det_size)
+            faces = self._run_detector(detector, img, det_size)
+            if faces:
+                suffix = " (fallback)" if det_size != self.det_sizes[0] else ""
+                print(f"[faceswap] detector det_size={det_size} faces={len(faces)}{suffix}", flush=True)
+                return faces
+        return []
+
+    def _run_detector(self, detector: insightface.app.FaceAnalysis, img: np.ndarray, det_size: int):
+        det_thresh_bak = getattr(detector, "det_thresh", None)
+
+        faces = detector.get(img)
         if faces:
             return faces
 
-        det_thresh_bak = getattr(self.app, "det_thresh", None)
-        try:
-            self.app.det_thresh = min(0.25, float(os.getenv("INSIGHTFACE_DET_THRESH", "0.25")))
-        except Exception:
-            pass
+        # fallback: слегка опускаем порог, если он выше заданного минимума
+        min_thresh = self.det_thresh_fallback
+        if min_thresh is not None and det_thresh_bak is not None and min_thresh < det_thresh_bak:
+            try:
+                detector.det_thresh = min_thresh
+            except Exception:
+                pass
+            faces = detector.get(img)
+            if faces:
+                if det_thresh_bak is not None:
+                    try:
+                        detector.det_thresh = det_thresh_bak
+                    except Exception:
+                        pass
+                return faces
 
         h, w = img.shape[:2]
         scale = 1.6 if max(h, w) < 1400 else 1.2
         big = cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_LINEAR)
-        faces = self.app.get(big)
+        faces = detector.get(big)
         if faces:
             if det_thresh_bak is not None:
-                self.app.det_thresh = det_thresh_bak
+                try:
+                    detector.det_thresh = det_thresh_bak
+                except Exception:
+                    pass
             return self._rescale_faces(faces, scale)
 
         yuv = cv2.cvtColor(big, cv2.COLOR_BGR2YUV)
@@ -118,16 +185,21 @@ class FaceSwapper:
         big2 = cv2.cvtColor(yuv, cv2.COLOR_YUV2BGR)
         sharp = cv2.GaussianBlur(big2, (0, 0), 1.2)
         big2 = np.clip(big2.astype(np.float32) + 0.6 * (big2.astype(np.float32) - sharp.astype(np.float32)), 0, 255).astype(np.uint8)
-        faces = self.app.get(big2)
+        faces = detector.get(big2)
 
         if det_thresh_bak is not None:
             try:
-                self.app.det_thresh = det_thresh_bak
+                detector.det_thresh = det_thresh_bak
             except Exception:
                 pass
 
         if faces:
             return self._rescale_faces(faces, scale)
+        if det_thresh_bak is not None:
+            try:
+                detector.det_thresh = det_thresh_bak
+            except Exception:
+                pass
         return []
 
     def _pick_target_face(self, faces, img_shape=None, prefer_xy=None):
