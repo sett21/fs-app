@@ -2,7 +2,7 @@ import os
 from PIL import Image
 from typing import Optional
 from diffusers import StableDiffusionXLInpaintPipeline, StableDiffusionInpaintPipeline
-import numpy as torch
+import torch
 
 class Inpainter:
     def __init__(self, model_repo: str, torch_dtype: str="fp16", device: str="cuda"):
