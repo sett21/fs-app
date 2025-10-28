@@ -61,7 +61,6 @@ services:
       SWAP_ENFORCE_FINAL: "1"
       INSIGHTFACE_DET_SIZE: "1024"    # покрупнее
       INSIGHTFACE_DET_THRESH: "0.3"   # понизим порог
-      SWAP_SELECT: "center"           # брать лицо ближе к центру открытки
       SWAP_EAR_EXPAND_PX: "22"        # больше ушей
       SWAP_HAIR_EXPAND_PX: "18"       # больше волос
       SWAP_CHIN_CUT_PX: "6"           # низ чутка отрезаем
@@ -83,7 +82,7 @@ services:
       OUTPUT_FORMAT: "png"
       USE_CPU: "0"
 
-      SWAP_SELECT: "center"       # варианты: center | largest | index
+      SWAP_SELECT: "largest"       # варианты: center | largest | index
       SWAP_INDEX: "0"             # используется, если SWAP_SELECT=index
 
       # усиление заметности свопа
