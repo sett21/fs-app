@@ -287,7 +287,7 @@ class FaceSwapper:
         return np.clip(img.astype(np.float32) + amount * (img.astype(np.float32) - blur.astype(np.float32)), 0, 255).astype(np.uint8)
 
     # ---------- Основной метод ----------
-    def swap(self, target_bgr: np.ndarray, src_face_bgr: np.ndarray, quad_center=None) -> np.ndarray:
+    def swap(self, target_bgr: np.ndarray, src_face_bgr: np.ndarray, quad_center=None, avoid_poly=None) -> np.ndarray:
         if target_bgr is None or src_face_bgr is None:
             print("[faceswap] empty inputs", flush=True)
             return target_bgr
@@ -295,6 +295,29 @@ class FaceSwapper:
         tar_faces = self._detect_faces(target_bgr)
         src_faces = self._detect_faces(src_face_bgr)
         print(f"[faceswap] detected target={len(tar_faces)} src={len(src_faces)}", flush=True)
+
+        # Если задан полигон области, которую нужно избегать (например, область открытки),
+        # исключаем лица, центры которых попадают внутрь него.
+        if avoid_poly is not None and len(tar_faces) > 0:
+            try:
+                poly = np.asarray(avoid_poly, dtype=np.float32)
+                if poly.shape == (4, 2):
+                    kept = []
+                    for f in tar_faces:
+                        x0, y0, x1, y1 = f.bbox.astype(int)
+                        cx, cy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
+                        inside = cv2.pointPolygonTest(poly, (float(cx), float(cy)), False) >= 0
+                        if not inside:
+                            kept.append(f)
+                    if kept:
+                        print(f"[faceswap] avoid_poly applied: {len(tar_faces)} -> {len(kept)}", flush=True)
+                        tar_faces = kept
+                    else:
+                        print("[faceswap] avoid_poly excluded all faces; keeping original list", flush=True)
+                else:
+                    print("[faceswap] avoid_poly ignored: wrong shape", flush=True)
+            except Exception as e:
+                print(f"[faceswap] avoid_poly error: {e}", flush=True)
 
         if not src_faces:
             if os.getenv("SAVE_DEBUG", "0") == "1":

@@ -239,7 +239,8 @@ class GenPipeline:
             if self.swap_mode == "after":
                 print("[faceswap] mode=after", flush=True)
                 try:
-                    final_bgr = self.swapper.swap(final_bgr, face_bgr, **swap_kwargs)
+                    # После компоновки открытки избегаем лиц внутри её четырёхугольника
+                    final_bgr = self.swapper.swap(final_bgr, face_bgr, avoid_poly=quad, **swap_kwargs)
                 except Exception as e:
                     print(f"[faceswap][after] failed: {e}", flush=True)
             elif self.swap_mode == "before" and enforce_final_swap:
