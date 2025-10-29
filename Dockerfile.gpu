@@ -19,8 +19,8 @@ RUN set -eux; \
         python3 python3-pip python3-dev git curl ca-certificates \
         libgl1 libglib2.0-0 build-essential \
         libcublas11 libcublaslt11 libcufft10 \
-        libcudart11.0 \
-        cuda-compat-12-1; \
+        libcudart11.0 libcudart12 \
+        cuda-compat-12-2; \
     rm -rf /var/lib/apt/lists/*
 
 # ---------- Глобальный constraint: не даём NumPy уйти в 2.x и фиксируем ML-стеки ----------
