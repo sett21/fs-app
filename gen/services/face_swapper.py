@@ -122,6 +122,11 @@ class FaceSwapper:
         self.ear_clone_mode = os.getenv("SWAP_EAR_CLONE_MODE", "normal").strip().lower()
         self.ear_erode = max(0, int(os.getenv("SWAP_EAR_ERODE", "2")))
         self.ear_min_area = max(50, int(os.getenv("SWAP_EAR_MIN_AREA", "300")))
+        # Fallback-маска, если FaceMesh дал смещение/пусто
+        try:
+            self.bbox_pad_pct = float(os.getenv("SWAP_BBOX_OVAL_PAD_PCT", "0.12"))
+        except Exception:
+            self.bbox_pad_pct = 0.12
         # Доп. ухо-настройки
         self.ear_expand_mult = float(os.getenv("SWAP_EAR_MULT", "1.6"))
         self.ear_extra_iters = max(1, int(os.getenv("SWAP_EAR_ITERS", "2")))
@@ -277,6 +282,24 @@ class FaceSwapper:
         cv2.fillConvexPoly(mask, pts, 255)
         return mask, chin_y
 
+    def _bbox_oval_mask(self, shape_hw, bbox):
+        h, w = shape_hw
+        x0, y0, x1, y1 = [int(v) for v in bbox]
+        bw = max(8, x1 - x0)
+        bh = max(8, y1 - y0)
+        pad_x = int(self.bbox_pad_pct * bw)
+        pad_y = int(self.bbox_pad_pct * bh)
+        cx = (x0 + x1) // 2
+        cy = (y0 + y1) // 2
+        ax = max(6, (bw // 2) + pad_x)
+        ay = max(6, (bh // 2) + pad_y)
+        m = np.zeros((h, w), np.uint8)
+        try:
+            cv2.ellipse(m, (cx, cy), (ax, ay), 0, 0, 360, 255, -1)
+        except Exception:
+            cv2.rectangle(m, (max(0, x0 - pad_x), max(0, y0 - pad_y)), (min(w - 1, x1 + pad_x), min(h - 1, y1 + pad_y)), 255, -1)
+        return m
+
     def _extended_mask(self, base_mask: np.ndarray, chin_y: int | None, bbox=None):
         if base_mask.max() == 0:
             return base_mask
@@ -420,9 +443,20 @@ class FaceSwapper:
             return rough
 
         base_mask, chin_y = self._facemesh_mask(rough)
+        # Фолбэк: если маска пустая или не попадает в bbox — берём овал по bbox
         if base_mask.max() == 0:
-            print("[faceswap] facemesh mask empty -> return rough", flush=True)
-            return rough
+            base_mask = self._bbox_oval_mask(rough.shape[:2], tar.bbox)
+            print("[faceswap] facemesh empty -> bbox oval", flush=True)
+        else:
+            # Проверим покрытие bbox
+            x0, y0, x1, y1 = tar.bbox.astype(int)
+            x0 = max(0, x0); y0 = max(0, y0); x1 = min(base_mask.shape[1]-1, x1); y1 = min(base_mask.shape[0]-1, y1)
+            bbox_area = max(1, (x1 - x0) * (y1 - y0))
+            cover = int(base_mask[y0:y1, x0:x1].sum() // 255)
+            ratio = cover / float(bbox_area)
+            if ratio < 0.35:
+                base_mask = self._bbox_oval_mask(rough.shape[:2], tar.bbox)
+                print(f"[faceswap] facemesh->bbox fallback ratio={ratio:.2f}", flush=True)
 
         ext_mask = self._extended_mask(base_mask, chin_y, bbox=tar.bbox)
         matched = self._reinhard_to_ref(rough, target_bgr, ext_mask)
