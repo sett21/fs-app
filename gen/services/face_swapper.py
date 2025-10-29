@@ -107,6 +107,13 @@ class FaceSwapper:
         self.swap_select = os.getenv("SWAP_SELECT", "largest").strip().lower()
         self.swap_index = max(0, int(os.getenv("SWAP_INDEX", "0")))
         self.force_full_overlay = os.getenv("SWAP_FORCE_FULL", "0") == "1"
+        # Жёсткая замена ушей (после расширения маски)
+        self.ear_hard = os.getenv("SWAP_EAR_HARD", "1") == "1"
+        self.ear_hard_feather = int(os.getenv("SWAP_EAR_FEATHER", "4"))
+        try:
+            self.core_dilate = int(os.getenv("SWAP_CORE_DILATE", "11"))
+        except Exception:
+            self.core_dilate = 11
         # Доп. ухо-настройки
         self.ear_expand_mult = float(os.getenv("SWAP_EAR_MULT", "1.6"))
         self.ear_extra_iters = max(1, int(os.getenv("SWAP_EAR_ITERS", "2")))
@@ -405,6 +412,20 @@ class FaceSwapper:
         matched = self._reinhard_to_ref(rough, target_bgr, ext_mask)
 
         out = matched
+        # Жёстко заменить уши: берём только область за пределами «ядра» лица
+        if self.ear_hard:
+            try:
+                k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (self.core_dilate, self.core_dilate))
+                core = cv2.dilate(base_mask, k, 1)
+                ear_only = cv2.subtract(ext_mask, core)
+                if ear_only.max() > 0:
+                    sigma = max(0.1, float(self.ear_hard_feather))
+                    a = cv2.GaussianBlur(ear_only, (0, 0), sigma)
+                    a = (a.astype(np.float32) / 255.0)[:, :, None]
+                    out = (matched.astype(np.float32) * a + out.astype(np.float32) * (1 - a)).astype(np.uint8)
+                    print("[faceswap] ear_hard blend applied", flush=True)
+            except Exception as e:
+                print(f"[faceswap][ear_hard] {e}", flush=True)
         if self.cfg.use_hair_from_src:
             src_for_blend = src_face_bgr
             if src_for_blend.shape[:2] != out.shape[:2]:
