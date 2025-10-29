@@ -567,6 +567,19 @@ class FaceSwapper:
             except Exception as e:
                 print(f"[faceswap][ear_clone] {e}", flush=True)
 
+        # Гарантируем, что центральное ядро остаётся из src (если Poisson смягчил слишком сильно)
+        try:
+            if os.getenv("SWAP_ENFORCE_CORE", "1") == "1":
+                core_k = max(3, int(os.getenv("SWAP_CORE_DILATE", str(self.core_dilate))))
+                feather = float(os.getenv("SWAP_CORE_FEATHER", "2.0"))
+                k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (core_k, core_k))
+                core = cv2.erode(base_mask, k, 1)
+                a = cv2.GaussianBlur(core, (0, 0), max(0.1, feather)).astype(np.float32) / 255.0
+                out = (matched.astype(np.float32) * a[:, :, None] + out.astype(np.float32) * (1 - a[:, :, None])).astype(np.uint8)
+                print("[faceswap] enforce core blend", flush=True)
+        except Exception as e:
+            print(f"[faceswap][enforce_core] {e}", flush=True)
+
         if glasses_a.max() > 0:
             out = (target_bgr.astype(np.float32) * glasses_a + out.astype(np.float32) * (1 - glasses_a)).astype(np.uint8)
 

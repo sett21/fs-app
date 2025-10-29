@@ -108,6 +108,8 @@ services:
       SWAP_CORE_GAIN: "1.5"      # 1.0..1.5 — сильнее «ядро» лица
       SWAP_HAIR_ALPHA: "1"     # 0..1    — слабее волосы (меньше артефактов по линии волос)
       SWAP_CORE_DILATE: "11"      # шире ядро
+      SWAP_ENFORCE_CORE: "1"
+      SWAP_CORE_FEATHER: "2.0"
 
       # отладка
       SWAP_DEBUG: "1"
