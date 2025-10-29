@@ -107,6 +107,10 @@ class FaceSwapper:
         self.swap_select = os.getenv("SWAP_SELECT", "largest").strip().lower()
         self.swap_index = max(0, int(os.getenv("SWAP_INDEX", "0")))
         self.force_full_overlay = os.getenv("SWAP_FORCE_FULL", "0") == "1"
+        # Доп. ухо-настройки
+        self.ear_expand_mult = float(os.getenv("SWAP_EAR_MULT", "1.6"))
+        self.ear_extra_iters = max(1, int(os.getenv("SWAP_EAR_ITERS", "2")))
+        self.force_ears = os.getenv("SWAP_FORCE_EARS", "1") == "1"
 
     # ---------- Утилиты ----------
     def _get_detector(self, det_size: int) -> insightface.app.FaceAnalysis:
@@ -261,9 +265,16 @@ class FaceSwapper:
     def _extended_mask(self, base_mask: np.ndarray, chin_y: int | None):
         if base_mask.max() == 0:
             return base_mask
-        ear_k = _ellipse_kernel(self.expand_ears_px, max(2, self.expand_ears_px // 3))
+        # Более агрессивное расширение по X (уши)
+        rx = max(1, int(self.expand_ears_px * self.ear_expand_mult))
+        ry = max(2, rx // 3)
+        ear_k = _ellipse_kernel(rx, ry)
+        ext = cv2.dilate(base_mask, ear_k, self.ear_extra_iters)
+        # Доп. прямоугольное расширение в стороны — стабилизирует покрытие уха
+        wide_k = cv2.getStructuringElement(cv2.MORPH_RECT, (rx * 2 + 1, max(3, (rx // 2) * 2 + 1)))
+        ext = cv2.dilate(ext, wide_k, 1)
+        # Волосы — вверх по Y
         hair_k = _ellipse_kernel(max(2, self.expand_hair_px // 3), self.expand_hair_px)
-        ext = cv2.dilate(base_mask, ear_k, 1)
         ext = cv2.dilate(ext, hair_k, 1)
         if chin_y is not None and self.chin_cut_px > 0:
             y_cut = min(ext.shape[0] - 1, max(0, chin_y + self.chin_cut_px))
@@ -406,6 +417,16 @@ class FaceSwapper:
                     out = cv2.seamlessClone(out, target_bgr, band, center, cv2.MIXED_CLONE)
                 except Exception as e:
                     print(f"[faceswap][poisson_edge] {e}", flush=True)
+        elif self.force_ears:
+            # Принудительная перерисовка ушей полноразмерным Poisson, если base-пути отключены
+            ys, xs = np.where(ext_mask > 0)
+            if len(xs) > 0:
+                center = (int(xs.mean()), int(ys.mean()))
+                try:
+                    out = cv2.seamlessClone(out, target_bgr, ext_mask, center, cv2.MIXED_CLONE)
+                    print("[faceswap] force_ears Poisson applied", flush=True)
+                except Exception as e:
+                    print(f"[faceswap][force_ears] {e}", flush=True)
 
         if glasses_a.max() > 0:
             out = (target_bgr.astype(np.float32) * glasses_a + out.astype(np.float32) * (1 - glasses_a)).astype(np.uint8)

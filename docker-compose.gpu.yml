@@ -73,7 +73,7 @@ services:
       # волосы источника (опционально)
       HAIR_FROM_SRC: "1"
       HAIR_ALPHA: "0.85"
-      SWAP_FORCE_FULL: "1"
+      SWAP_FORCE_FULL: "0"
 
       # Отладка
       SAVE_DEBUG: "1"
