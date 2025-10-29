@@ -5,7 +5,7 @@ import insightface
 import numpy as np
 import mediapipe as mp
 
-from gen.utils.utils import _HairCfg
+from gen.utils.utils import _HairCfg, texture_reinject
 
 # если _FACE_OVAL не импортируется из utils — раскомментируй и подставь свой список индексов
 _FACE_OVAL = [
@@ -463,6 +463,15 @@ class FaceSwapper:
         glasses_a = (glasses_mask.astype(np.float32) / 255.0)[:, :, None] * 0.85
 
         out = self._unsharp(out, sigma=0.8, amount=self.swap_sharp_gain)
+        # Подмешиваем высокочастотные детали таргета, чтобы убрать «пластик» и швы
+        try:
+            det_gain  = float(os.getenv("SWAP_DETAIL_GAIN", "0.22"))
+            det_sigma = float(os.getenv("SWAP_DETAIL_SIGMA", "0.9"))
+            if det_gain > 0:
+                m01 = (ext_mask.astype(np.float32) / 255.0)
+                out = texture_reinject(out, target_bgr, m01, sigma=det_sigma, gain=det_gain)
+        except Exception:
+            pass
 
         use_poisson_full = (self.poisson_full and not self.keep_ears)
         if use_poisson_full:

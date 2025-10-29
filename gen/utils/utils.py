@@ -50,7 +50,7 @@ def warp_into_quad(src_bgr: np.ndarray, dst_quad: np.ndarray, canvas_size: Tuple
     card_pad = cv2.copyMakeBorder(card, 1,1,1,1, cv2.BORDER_REPLICATE)
     src_pts = np.array([[1,1],[tw,1],[tw,th],[1,th]], np.float32)
     M = cv2.getPerspectiveTransform(src_pts, dst_quad)
-    overlay = cv2.warpPerspective(card_pad, M, (Wc, Hc), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+    overlay = cv2.warpPerspective(card_pad, M, (Wc, Hc), flags=cv2.INTER_LANCZOS4, borderMode=cv2.BORDER_REPLICATE)
     mask = np.zeros((Hc, Wc), np.uint8)
     cv2.fillConvexPoly(mask, dst_quad.astype(np.int32), 255)
     return overlay, mask
