@@ -107,6 +107,9 @@ class FaceSwapper:
         self.swap_select = os.getenv("SWAP_SELECT", "largest").strip().lower()
         self.swap_index = max(0, int(os.getenv("SWAP_INDEX", "0")))
         self.force_full_overlay = os.getenv("SWAP_FORCE_FULL", "0") == "1"
+        # Режим: сохранять уши таргета (меняем только ядро лица)
+        self.keep_ears = os.getenv("SWAP_KEEP_EARS", "0") == "1"
+        self.core_shrink_px = int(os.getenv("SWAP_CORE_SHRINK_PX", "4"))
         # Жёсткая замена ушей (после расширения маски)
         self.ear_hard = os.getenv("SWAP_EAR_HARD", "1") == "1"
         self.ear_hard_feather = int(os.getenv("SWAP_EAR_FEATHER", "4"))
@@ -277,6 +280,14 @@ class FaceSwapper:
     def _extended_mask(self, base_mask: np.ndarray, chin_y: int | None, bbox=None):
         if base_mask.max() == 0:
             return base_mask
+        # Если нужно оставить уши оригинала — не расширяем маску, а наоборот слегка сужаем ядро
+        if self.keep_ears:
+            if self.core_shrink_px > 0:
+                k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (self.core_shrink_px*2+1, self.core_shrink_px*2+1))
+                core = cv2.erode(base_mask, k, 1)
+            else:
+                core = base_mask
+            return core
         # Более агрессивное расширение по X (уши)
         rx = max(1, int(self.expand_ears_px * self.ear_expand_mult))
         ry = max(2, rx // 3)
@@ -417,8 +428,8 @@ class FaceSwapper:
         matched = self._reinhard_to_ref(rough, target_bgr, ext_mask)
 
         out = matched
-        # Жёстко заменить уши: берём только область за пределами «ядра» лица
-        if self.ear_hard:
+        # Жёстко заменить уши: (отключаем, если keep_ears)
+        if self.ear_hard and not self.keep_ears:
             try:
                 k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (self.core_dilate, self.core_dilate))
                 core = cv2.dilate(base_mask, k, 1)
@@ -453,7 +464,8 @@ class FaceSwapper:
 
         out = self._unsharp(out, sigma=0.8, amount=self.swap_sharp_gain)
 
-        if self.poisson_full:
+        use_poisson_full = (self.poisson_full and not self.keep_ears)
+        if use_poisson_full:
             ys, xs = np.where(ext_mask > 0)
             if len(xs) > 0:
                 center = (int(xs.mean()), int(ys.mean()))
@@ -470,7 +482,7 @@ class FaceSwapper:
                     out = cv2.seamlessClone(out, target_bgr, band, center, cv2.MIXED_CLONE)
                 except Exception as e:
                     print(f"[faceswap][poisson_edge] {e}", flush=True)
-        elif self.force_ears:
+        elif self.force_ears and not self.keep_ears:
             # Принудительная перерисовка ушей полноразмерным Poisson, если base-пути отключены
             ys, xs = np.where(ext_mask > 0)
             if len(xs) > 0:
@@ -482,7 +494,7 @@ class FaceSwapper:
                     print(f"[faceswap][force_ears] {e}", flush=True)
 
         # Локальный clone только для каждой «ушной» компоненты, чтобы убрать двойные уши
-        if self.ear_clone:
+        if self.ear_clone and not self.keep_ears:
             try:
                 k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (self.core_dilate, self.core_dilate))
                 core = cv2.dilate(base_mask, k, 1)

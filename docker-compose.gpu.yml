@@ -73,6 +73,8 @@ services:
       FACE_MODEL_PATH: "/models/inswapper_128.onnx"
       DISABLE_HANDS: "0"
       DISABLE_FACEMESH: "0"
+      SWAP_KEEP_EARS: "1"
+      SWAP_CORE_SHRINK_PX: "4"
       # волосы источника (опционально)
       HAIR_FROM_SRC: "0"
       SWAP_FORCE_EARS: "1"
