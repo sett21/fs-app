@@ -39,7 +39,7 @@ services:
       # Кромка/контакт
       RING_IN_PCT: "0.0035"
       RING_OUT_PCT: "0.010"
-      EDGE_SNAP_ITERS: "2"
+      EDGE_SNAP_ITERS: "3"
       RIM_SHADE: "0.045"
       SEAMLESS_EDGE: "1"
 
@@ -68,7 +68,7 @@ services:
       SWAP_HAIR_EXPAND_PX: "20"       # зона над ушами
       SWAP_CHIN_CUT_PX: "2"           # низ почти не режем
       POISSON_FACE: "1"
-      SWAP_POISSON_FULL: "0"          # полноразмерный Poisson, чтобы «переносить» уши/волосы
+      SWAP_POISSON_FULL: "1"          # полноразмерный Poisson, чтобы «переносить» уши/волосы
       SWAP_SHARP_GAIN: "0.32"
       FACE_MODEL_PATH: "/models/inswapper_128.onnx"
       DISABLE_HANDS: "0"
@@ -83,14 +83,15 @@ services:
       EDGE_SNAP_ITERS: "3"
       # волосы источника (опционально)
       HAIR_FROM_SRC: "0"
-      SWAP_DETAIL_GAIN: "0.28"
+      SWAP_DETAIL_GAIN: "0.26"
+      SWAP_DETAIL_SIGMA: "0.9"
       SWAP_FORCE_EARS: "1"
       SWAP_EAR_HARD: "1"
       SWAP_EAR_FEATHER: "6"
       SWAP_EAR_CLONE: "1"
       SWAP_EAR_CLONE_MODE: "normal"
-      SWAP_EAR_ERODE: "1"
-      SWAP_EAR_MIN_AREA: "500"
+      SWAP_EAR_ERODE: "2"
+      SWAP_EAR_MIN_AREA: "300"
       HAIR_ALPHA: "0.3"
       SWAP_FORCE_FULL: "0"
 
@@ -101,13 +102,13 @@ services:
       OUTPUT_FORMAT: "png"
       USE_CPU: "0"
 
-      SWAP_SELECT: "index"       # варианты: center | largest | index
-      SWAP_INDEX: "1"             # используется, если SWAP_SELECT=index
+      SWAP_SELECT: "center"       # варианты: center | largest | index
+      SWAP_INDEX: "0"             # используется, если SWAP_SELECT=index
 
       # усиление заметности свопа
       SWAP_CORE_GAIN: "1.5"      # 1.0..1.5 — сильнее «ядро» лица
       SWAP_HAIR_ALPHA: "1"     # 0..1    — слабее волосы (меньше артефактов по линии волос)
-      SWAP_CORE_DILATE: "8"      # шире ядро
+      SWAP_CORE_DILATE: "11"      # шире ядро
 
       # отладка
       SWAP_DEBUG: "1"
