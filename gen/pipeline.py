@@ -122,11 +122,21 @@ class GenPipeline:
 
         # ===== 7.4) Контактный шов пальцев =====
         contact_line, edge_narrow = build_contact_masks_tight(hand, mask_poly)
+        # Узкий контактный шов и мягкая тень под пальцами на открытке
         contact_alpha = (contact_line.astype(np.float32)/255.0)
         contact_alpha = refine_alpha_with_edges(selfie_bgr, contact_alpha, iters=2)
         shade_k = float(os.getenv("RIM_SHADE", "0.06"))
         mul = 1.0 - shade_k * contact_alpha[:, :, None]
         init = np.clip(init.astype(np.float32) * mul, 0, 255).astype(np.uint8)
+
+        # Дополнительная мягкая тень от пальцев внутри полигона (улучшенная прорисовка)
+        c_sigma = float(os.getenv("CONTACT_FEATHER", "2.2"))
+        c_gain  = float(os.getenv("CONTACT_SHADE", "0.10"))
+        if c_gain > 0:
+            c_grad = cv2.GaussianBlur(contact_line, (0,0), c_sigma)
+            if c_grad.max() > 0:
+                c_grad = (c_grad.astype(np.float32) / 255.0)[:, :, None]
+                init = np.clip(init.astype(np.float32) * (1.0 - c_gain * c_grad), 0, 255).astype(np.uint8)
 
         # лёгкая тень вдоль кромки для реализма
         edge_dist = cv2.distanceTransform((mask_poly>0).astype(np.uint8), cv2.DIST_L2, 3)

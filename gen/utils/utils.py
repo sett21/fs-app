@@ -271,4 +271,18 @@ def hand_mask_bgr(bgr: np.ndarray) -> np.ndarray:
         if pts.shape[0] >= 3:
             hull = cv2.convexHull(pts)
             cv2.fillConvexPoly(mask, hull, 255)
-    return cv2.dilate(mask, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7)), 1)
+    # Усиление маски за счёт кожи (безопасно, т.к. позже пересекается с полигоном)
+    try:
+        if os.getenv("HAND_SKIN_UNION", "1") == "1":
+            skin = skin_mask(bgr)
+            mask = cv2.bitwise_or(mask, skin)
+    except Exception:
+        pass
+    dil = max(3, int(os.getenv("HAND_DILATE_PX", "6")))
+    ero = max(0, int(os.getenv("HAND_ERODE_PX", "2")))
+    k_d = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (dil*2+1, dil*2+1))
+    k_e = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ero*2+1, ero*2+1)) if ero>0 else None
+    mask = cv2.dilate(mask, k_d, 1)
+    if k_e is not None:
+        mask = cv2.erode(mask, k_e, 1)
+    return mask
