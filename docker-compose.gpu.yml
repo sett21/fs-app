@@ -61,9 +61,10 @@ services:
       SWAP_ENFORCE_FINAL: "1"
       INSIGHTFACE_DET_SIZE: "640"     # ретина лучше ловит source на меньшем разрешении
       INSIGHTFACE_DET_THRESH: "0.25"  # чуть выше, чтобы не ловить шум
-      SWAP_EAR_EXPAND_PX: "32"        # шире зона ушей
+      SWAP_EAR_EXPAND_PX: "36"        # шире зона ушей
       SWAP_EAR_MULT: "1.8"            # доп. множитель расширения по X
       SWAP_EAR_ITERS: "3"             # итерации ушного расширения
+      SWAP_EAR_RECT_W: "24"           # ширина прямоугольных карманов уха
       SWAP_HAIR_EXPAND_PX: "20"       # зона над ушами
       SWAP_CHIN_CUT_PX: "2"           # низ почти не режем
       POISSON_FACE: "1"
@@ -75,6 +76,12 @@ services:
       # волосы источника (опционально)
       HAIR_FROM_SRC: "0"
       SWAP_FORCE_EARS: "1"
+      SWAP_EAR_HARD: "1"
+      SWAP_EAR_FEATHER: "6"
+      SWAP_EAR_CLONE: "1"
+      SWAP_EAR_CLONE_MODE: "normal"
+      SWAP_EAR_ERODE: "2"
+      SWAP_EAR_MIN_AREA: "300"
       HAIR_ALPHA: "0.85"
       SWAP_FORCE_FULL: "0"
 

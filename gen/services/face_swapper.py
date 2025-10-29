@@ -114,6 +114,11 @@ class FaceSwapper:
             self.core_dilate = int(os.getenv("SWAP_CORE_DILATE", "11"))
         except Exception:
             self.core_dilate = 11
+        # Дополнительный ear‑clone для устранения наложений
+        self.ear_clone = os.getenv("SWAP_EAR_CLONE", "1") == "1"
+        self.ear_clone_mode = os.getenv("SWAP_EAR_CLONE_MODE", "normal").strip().lower()
+        self.ear_erode = max(0, int(os.getenv("SWAP_EAR_ERODE", "2")))
+        self.ear_min_area = max(50, int(os.getenv("SWAP_EAR_MIN_AREA", "300")))
         # Доп. ухо-настройки
         self.ear_expand_mult = float(os.getenv("SWAP_EAR_MULT", "1.6"))
         self.ear_extra_iters = max(1, int(os.getenv("SWAP_EAR_ITERS", "2")))
@@ -475,6 +480,37 @@ class FaceSwapper:
                     print("[faceswap] force_ears Poisson applied", flush=True)
                 except Exception as e:
                     print(f"[faceswap][force_ears] {e}", flush=True)
+
+        # Локальный clone только для каждой «ушной» компоненты, чтобы убрать двойные уши
+        if self.ear_clone:
+            try:
+                k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (self.core_dilate, self.core_dilate))
+                core = cv2.dilate(base_mask, k, 1)
+                ear_only = cv2.subtract(ext_mask, core)
+                if self.ear_erode > 0:
+                    ek = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (self.ear_erode*2+1, self.ear_erode*2+1))
+                    ear_only = cv2.erode(ear_only, ek, 1)
+                cnts, _ = cv2.findContours(ear_only, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                mode = cv2.NORMAL_CLONE if self.ear_clone_mode != "mixed" else cv2.MIXED_CLONE
+                for c in cnts:
+                    area = cv2.contourArea(c)
+                    if area < self.ear_min_area:
+                        continue
+                    x, y, w, h = cv2.boundingRect(c)
+                    mask = np.zeros_like(ear_only)
+                    cv2.drawContours(mask, [c], -1, 255, -1)
+                    M = cv2.moments(c)
+                    if M['m00'] == 0:
+                        continue
+                    cx = int(M['m10']/M['m00'])
+                    cy = int(M['m01']/M['m00'])
+                    try:
+                        out = cv2.seamlessClone(out, target_bgr, mask, (cx, cy), mode)
+                    except Exception:
+                        pass
+                print("[faceswap] ear_clone components applied", flush=True)
+            except Exception as e:
+                print(f"[faceswap][ear_clone] {e}", flush=True)
 
         if glasses_a.max() > 0:
             out = (target_bgr.astype(np.float32) * glasses_a + out.astype(np.float32) * (1 - glasses_a)).astype(np.uint8)
