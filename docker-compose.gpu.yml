@@ -68,15 +68,22 @@ services:
       SWAP_HAIR_EXPAND_PX: "20"       # зона над ушами
       SWAP_CHIN_CUT_PX: "2"           # низ почти не режем
       POISSON_FACE: "1"
-      SWAP_POISSON_FULL: "1"          # полноразмерный Poisson, чтобы «переносить» уши/волосы
-      SWAP_SHARP_GAIN: "0.28"
+      SWAP_POISSON_FULL: "0"          # полноразмерный Poisson, чтобы «переносить» уши/волосы
+      SWAP_SHARP_GAIN: "0.32"
       FACE_MODEL_PATH: "/models/inswapper_128.onnx"
       DISABLE_HANDS: "0"
       DISABLE_FACEMESH: "0"
-      SWAP_KEEP_EARS: "1"
+      SWAP_KEEP_EARS: "0"
       SWAP_CORE_SHRINK_PX: "8"
+      HAND_SKIN_UNION: "1"
+      HAND_DILATE_PX: "8"
+      HAND_ERODE_PX: "2"
+      CONTACT_FEATHER: "2.6"
+      CONTACT_SHADE: "0.12"
+      EDGE_SNAP_ITERS: "3"
       # волосы источника (опционально)
-      HAIR_FROM_SRC: "1"
+      HAIR_FROM_SRC: "0"
+      SWAP_DETAIL_GAIN: "0.28"
       SWAP_FORCE_EARS: "1"
       SWAP_EAR_HARD: "1"
       SWAP_EAR_FEATHER: "6"
