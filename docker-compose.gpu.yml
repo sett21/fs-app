@@ -80,7 +80,6 @@ services:
       HAND_ERODE_PX: "2"
       CONTACT_FEATHER: "2.6"
       CONTACT_SHADE: "0.12"
-      EDGE_SNAP_ITERS: "3"
       # волосы источника (опционально)
       HAIR_FROM_SRC: "0"
       SWAP_DETAIL_GAIN: "0.26"
