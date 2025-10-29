@@ -262,7 +262,7 @@ class FaceSwapper:
         cv2.fillConvexPoly(mask, pts, 255)
         return mask, chin_y
 
-    def _extended_mask(self, base_mask: np.ndarray, chin_y: int | None):
+    def _extended_mask(self, base_mask: np.ndarray, chin_y: int | None, bbox=None):
         if base_mask.max() == 0:
             return base_mask
         # Более агрессивное расширение по X (уши)
@@ -276,6 +276,33 @@ class FaceSwapper:
         # Волосы — вверх по Y
         hair_k = _ellipse_kernel(max(2, self.expand_hair_px // 3), self.expand_hair_px)
         ext = cv2.dilate(ext, hair_k, 1)
+        # Добавим прямоугольные «карманы» в области ушей по bbox лица
+        try:
+            if bbox is not None:
+                x0, y0, x1, y1 = [int(v) for v in bbox]
+                h, w = base_mask.shape[:2]
+                x0 = max(0, min(w - 1, x0)); x1 = max(0, min(w - 1, x1))
+                y0 = max(0, min(h - 1, y0)); y1 = max(0, min(h - 1, y1))
+                # Вертикальный диапазон ушей: от верхней границы маски до подбородка
+                ys, xs = np.where(base_mask > 0)
+                if len(ys) > 0:
+                    top = int(np.min(ys))
+                else:
+                    top = y0
+                ear_y0 = max(0, top)
+                ear_y1 = min(h - 1, chin_y if chin_y is not None else y1)
+                # Ширина «кармана» берётся от env или из rx
+                rect_w = int(os.getenv("SWAP_EAR_RECT_W", "16"))
+                # Левый карман
+                lx0 = max(0, x0 - rect_w)
+                lx1 = max(0, min(w - 1, x0 + rect_w))
+                ext[ear_y0:ear_y1, lx0:lx1] = 255
+                # Правый карман
+                rx0 = max(0, min(w - 1, x1 - rect_w))
+                rx1 = min(w - 1, x1 + rect_w)
+                ext[ear_y0:ear_y1, rx0:rx1] = 255
+        except Exception:
+            pass
         if chin_y is not None and self.chin_cut_px > 0:
             y_cut = min(ext.shape[0] - 1, max(0, chin_y + self.chin_cut_px))
             ext[y_cut:, :] = 0
@@ -374,7 +401,7 @@ class FaceSwapper:
             print("[faceswap] facemesh mask empty -> return rough", flush=True)
             return rough
 
-        ext_mask = self._extended_mask(base_mask, chin_y)
+        ext_mask = self._extended_mask(base_mask, chin_y, bbox=tar.bbox)
         matched = self._reinhard_to_ref(rough, target_bgr, ext_mask)
 
         out = matched
