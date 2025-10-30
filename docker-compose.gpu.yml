@@ -14,102 +14,103 @@ services:
       PYTHONUNBUFFERED: "1"
 
       # Torch/threads
-      TORCH_THREADS: "4"
-      OMP_NUM_THREADS: "1"
-      OPENBLAS_NUM_THREADS: "1"
-      MKL_NUM_THREADS: "1"
-      TOKENIZERS_PARALLELISM: "false"
-      PYTORCH_CUDA_ALLOC_CONF: "max_split_size_mb:128"
-      TRANSFORMERS_NO_TORCHVISION: "1"
-      HF_HUB_ENABLE_HF_TRANSFER: "0"
+      TORCH_THREADS: "4"                # кол-во потоков PyTorch (gen/pipeline.py)
+      OMP_NUM_THREADS: "1"              # OpenMP threads (глобально)
+      OPENBLAS_NUM_THREADS: "1"         # OpenBLAS threads (глобально)
+      MKL_NUM_THREADS: "1"              # MKL threads (глобально)
+      TOKENIZERS_PARALLELISM: "false"   # HuggingFace tokenizers (глобально)
+      PYTORCH_CUDA_ALLOC_CONF: "max_split_size_mb:128" # поведение CUDA‑аллокатора
+      TRANSFORMERS_NO_TORCHVISION: "1"  # не тянуть torchvision (глобально)
+      HF_HUB_ENABLE_HF_TRANSFER: "0"    # отключить hf_transfer (глобально)
 
       # SD / Inpaint
-      INPAINT_REPO: "runwayml/stable-diffusion-inpainting"
-      TORCH_dtype: "fp16"
-      MAX_SIDE: "1600"
-      STEPS: "22"
-      GUIDANCE: "4.0"
-      STRENGTH: "0.46"
+      INPAINT_REPO: "runwayml/stable-diffusion-inpainting"  # какой SD inpaint (gen/services/inpainter.py)
+      TORCH_dtype: "fp16"            # fp16/fp32/CPU логика в Inpainter (gen/services/inpainter.py)
+      MAX_SIDE: "1600"               # ограничение размера входов (gen/pipeline.py)
+      STEPS: "22"                     # num_inference_steps (gen/services/inpainter.py)
+      GUIDANCE: "4.0"                 # guidance_scale (gen/services/inpainter.py)
+      STRENGTH: "0.46"               # denoise strength (gen/services/inpainter.py)
 
       # Патч-инпейнт
-      INPAINT_LONG: "1400"
-      INPAINT_PAD_PCT: "0.08"
-      MASK_GROW: "4"
+      INPAINT_LONG: "1400"            # длинная сторона патча для SD (gen/pipeline.py)
+      INPAINT_PAD_PCT: "0.08"         # паддинг вокруг bbox (gen/pipeline.py)
+      MASK_GROW: "4"                   # расширение маски для SD (gen/pipeline.py)
 
       # Кромка/контакт
-      RING_IN_PCT: "0.0035"
-      RING_OUT_PCT: "0.010"
-      EDGE_SNAP_ITERS: "3"
-      RIM_SHADE: "0.045"
-      SEAMLESS_EDGE: "1"
+      RING_IN_PCT: "0.0035"           # внутренний перо‑радиус для Laplacian blend (gen/utils/utils.py: ring_grad)
+      RING_OUT_PCT: "0.010"            # внешний перо‑радиус (gen/utils/utils.py)
+      EDGE_SNAP_ITERS: "3"             # уточнение альфы по краям (gen/utils/utils.py: refine_alpha_with_edges)
+      RIM_SHADE: "0.245"               # затемнение у кромки (gen/pipeline.py)
+      SEAMLESS_EDGE: "1"               # локальный Poisson по кромке карты (gen/pipeline.py)
 
       # Детали кожи/зерно
-      FINGER_DETAIL_SIGMA: "1.1"
-      FINGER_DETAIL_GAIN: "0.38"
-      GRAIN_STRENGTH: "0.010"
+      FINGER_DETAIL_SIGMA: "1.1"       # детализация кожи (gen/utils/utils.py: texture_reinject)
+      FINGER_DETAIL_GAIN: "0.38"       # сила микротекстуры (gen/utils/utils.py)
+      GRAIN_STRENGTH: "0.010"          # плёночное зерно (gen/utils/utils.py: add_fine_grain)
 
       # Эффект страницы
-      PAGE_EFFECT: "1"
-      PAGE_SIDE: "right"
-      PAGE_INNER_PX: "14"
-      PAGE_SHADE: "0.05"
-      PAGE_STRIPES: "1"
+      PAGE_EFFECT: "1"                 # включить эффект страницы (gen/utils/utils.py: apply_page_stack)
+      PAGE_SIDE: "right"               # сторона корешка (apply_page_stack)
+      PAGE_INNER_PX: "14"              # ширина внутренней тени (apply_page_stack)
+      PAGE_SHADE: "0.05"               # сила тени (apply_page_stack)
+      PAGE_STRIPES: "1"                # полосы у корешка (apply_page_stack)
 
       # Faceswap
-      DISABLE_FACE_SWAP: "0"
-      SWAP_MODE: "after"
-      SWAP_ENFORCE_FINAL: "1"
-      INSIGHTFACE_DET_SIZE: "640"     # ретина лучше ловит source на меньшем разрешении
-      INSIGHTFACE_DET_THRESH: "0.25"  # чуть выше, чтобы не ловить шум
-      SWAP_EAR_EXPAND_PX: "36"        # шире зона ушей
-      SWAP_EAR_MULT: "1.8"            # доп. множитель расширения по X
-      SWAP_EAR_ITERS: "3"             # итерации ушного расширения
-      SWAP_EAR_RECT_W: "24"           # ширина прямоугольных карманов уха
-      SWAP_HAIR_EXPAND_PX: "20"       # зона над ушами
-      SWAP_CHIN_CUT_PX: "2"           # низ почти не режем
-      POISSON_FACE: "1"
-      SWAP_POISSON_FULL: "1"          # полноразмерный Poisson, чтобы «переносить» уши/волосы
-      SWAP_SHARP_GAIN: "0.32"
-      FACE_MODEL_PATH: "/models/inswapper_128.onnx"
-      DISABLE_HANDS: "0"
-      DISABLE_FACEMESH: "0"
-      SWAP_KEEP_EARS: "0"
-      SWAP_CORE_SHRINK_PX: "8"
-      HAND_SKIN_UNION: "1"
-      HAND_DILATE_PX: "8"
-      HAND_ERODE_PX: "2"
-      CONTACT_FEATHER: "2.6"
-      CONTACT_SHADE: "0.12"
+      DISABLE_FACE_SWAP: "0"           # полностью отключить своп (gen/pipeline.py)
+      SWAP_MODE: "after"               # before/after относит. компоновки (gen/pipeline.py)
+      SWAP_ENFORCE_FINAL: "1"          # дополнительный финальный своп (gen/pipeline.py)
+      INSIGHTFACE_DET_SIZE: "640"      # размер детектора лиц (gen/services/face_swapper.py)
+      INSIGHTFACE_DET_THRESH: "0.25"   # порог детектора лиц (face_swapper.py)
+      SWAP_EAR_EXPAND_PX: "36"         # баз. расширение по X для ушей (face_swapper.py: _extended_mask)
+      SWAP_EAR_MULT: "1.8"             # множитель расширения ушей (face_swapper.py)
+      SWAP_EAR_ITERS: "3"              # кол-во дилатаций ушей (face_swapper.py)
+      SWAP_EAR_RECT_W: "24"            # «карманы» по бокам bbox (face_swapper.py)
+      SWAP_HAIR_EXPAND_PX: "20"        # расширение вверх (волосы) (face_swapper.py)
+      SWAP_CHIN_CUT_PX: "2"            # обрез снизу по подбородку (face_swapper.py)
+      POISSON_FACE: "1"                # узкий Poisson по границе (face_swapper.py)
+      SWAP_POISSON_FULL: "1"           # полноразмерный Poisson по ext_mask (face_swapper.py)
+      SWAP_SHARP_GAIN: "0.32"          # лёгкая резкость после свопа (face_swapper.py)
+      FACE_MODEL_PATH: "/models/inswapper_128.onnx" # путь к ONNX‑модели inswapper (face_swapper.py)
+      DISABLE_HANDS: "0"               # выключить распознавание рук (gen/utils/utils.py)
+      DISABLE_FACEMESH: "0"            # выключить FaceMesh (face_swapper.py)
+      SWAP_KEEP_EARS: "0"              # оставить уши таргета (вместо переноса) (face_swapper.py)
+      SWAP_CORE_SHRINK_PX: "8"         # сужение «ядра» при KEEP_EARS (face_swapper.py)
+      HAND_SKIN_UNION: "1"             # объединять маску рук с skin‑mask (gen/utils/utils.py: hand_mask_bgr)
+      HAND_DILATE_PX: "8"               # расширить маску руки (hand_mask_bgr)
+      HAND_ERODE_PX: "2"                # затем чуть усадить (hand_mask_bgr)
+      CONTACT_FEATHER: "2.6"            # перо контактной тени (gen/pipeline.py)
+      CONTACT_SHADE: "0.12"             # сила контактной тени (gen/pipeline.py)
       # волосы источника (опционально)
-      HAIR_FROM_SRC: "0"
-      SWAP_DETAIL_GAIN: "0.26"
-      SWAP_DETAIL_SIGMA: "0.9"
-      SWAP_FORCE_EARS: "1"
-      SWAP_EAR_HARD: "1"
-      SWAP_EAR_FEATHER: "6"
-      SWAP_EAR_CLONE: "1"
-      SWAP_EAR_CLONE_MODE: "normal"
-      SWAP_EAR_ERODE: "2"
-      SWAP_EAR_MIN_AREA: "300"
-      HAIR_ALPHA: "0.3"
-      SWAP_FORCE_FULL: "0"
+      HAIR_FROM_SRC: "0"                # подмешивать волосы источника (face_swapper.py)
+      SWAP_DETAIL_GAIN: "0.26"          # реинжект высоких частот (face_swapper.py)
+      SWAP_DETAIL_SIGMA: "0.9"          # размер «пор» для деталей (face_swapper.py)
+      SWAP_FORCE_EARS: "1"              # принудит. Poisson ушей, если отключён full (face_swapper.py)
+      SWAP_EAR_HARD: "1"                # жёстко заменять уши на src (face_swapper.py)
+      SWAP_EAR_FEATHER: "6"             # перо для ушей (face_swapper.py)
+      SWAP_EAR_CLONE: "1"               # локальный Poisson по каждой ушной компоненте (face_swapper.py)
+      SWAP_EAR_CLONE_MODE: "normal"     # normal|mixed (face_swapper.py)
+      SWAP_EAR_ERODE: "2"               # усадка ушной маски перед clone (face_swapper.py)
+      SWAP_EAR_MIN_AREA: "300"          # мин. площадь компоненты уха (face_swapper.py)
+      HAIR_ALPHA: "0.3"                 # сила волос источника (face_swapper.py)
+      SWAP_FORCE_FULL: "0"              # вернуть сырой swap без маски (face_swapper.py)
+      SWAP_BBOX_OVAL_PAD_PCT: "0.12"    # поля овала при bbox‑fallback маски (face_swapper.py)
 
       # Отладка
-      SAVE_DEBUG: "0"
-      SKIP_INPAINT: "0"
-      FALLBACK_INPAINT: "0"
-      OUTPUT_FORMAT: "png"
-      USE_CPU: "0"
+      SAVE_DEBUG: "1"                   # сохранять debug_* в /tmp (сервисы и API)
+      SKIP_INPAINT: "0"                 # пропустить SD‑inpaint (gen/pipeline.py)
+      FALLBACK_INPAINT: "0"              # принудит. OpenCV‑inpaint (gen/pipeline.py)
+      OUTPUT_FORMAT: "png"               # формат ответа (api/server), пока png
+      USE_CPU: "0"                       # CPU режим для torch/onnx (face_swapper.py/inpainter.py)
 
       SWAP_SELECT: "center"       # варианты: center | largest | index
       SWAP_INDEX: "0"             # используется, если SWAP_SELECT=index
 
       # усиление заметности свопа
-      SWAP_CORE_GAIN: "1.5"      # 1.0..1.5 — сильнее «ядро» лица
-      SWAP_HAIR_ALPHA: "1"     # 0..1    — слабее волосы (меньше артефактов по линии волос)
-      SWAP_CORE_DILATE: "11"      # шире ядро
-      SWAP_ENFORCE_CORE: "1"
-      SWAP_CORE_FEATHER: "2.0"
+      SWAP_CORE_GAIN: "1.5"            # усиление «ядра» (face_swapper.py)
+      SWAP_HAIR_ALPHA: "1"             # сила волос (face_swapper.py)
+      SWAP_CORE_DILATE: "11"           # ширина «ядра» (face_swapper.py)
+      SWAP_ENFORCE_CORE: "1"           # закрепить ядро после Poisson (face_swapper.py)
+      SWAP_CORE_FEATHER: "2.0"         # перо при закреплении ядра (face_swapper.py)
 
       # отладка
       SWAP_DEBUG: "1"

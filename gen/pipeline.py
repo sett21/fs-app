@@ -29,6 +29,10 @@ class GenPipeline:
         self.ring_in_pct  = float(os.getenv("RING_IN_PCT",  "0.004"))
         self.ring_out_pct = float(os.getenv("RING_OUT_PCT", "0.012"))
         self.seamless_edge = os.getenv("SEAMLESS_EDGE", "1") == "1"
+        # Кромка карточки/анти‑спилл
+        self.card_hard_edge   = os.getenv("CARD_HARD_EDGE", "0") == "1"
+        self.edge_blend_lvls  = int(os.getenv("EDGE_BLEND_LEVELS", "3"))
+        self.despill_gain     = float(os.getenv("DESPILL_GAIN", "0.85"))
 
         # --- эффект страницы ---
         self.page_effect   = os.getenv("PAGE_EFFECT","1") == "1"
@@ -111,7 +115,12 @@ class GenPipeline:
         edge_grad  = ring_grad(mask_poly, rin, rout)
         alpha_edge = (edge_grad[:, :, None] * (nohand[:, :, None]/255.0)).astype(np.float32)
         alpha_edge = np.clip(alpha_edge * 0.8, 0, 1)
-        init = laplacian_blend(overlay, init, alpha_edge, levels=3)
+        if self.card_hard_edge:
+            hard = (mask_poly > 0).astype(np.float32)
+            hard = cv2.GaussianBlur(hard, (0,0), 0.6)
+            init = (overlay.astype(np.float32)*hard[:, :, None] + init.astype(np.float32)*(1-hard[:, :, None])).astype(np.uint8)
+        else:
+            init = laplacian_blend(overlay, init, alpha_edge, levels=max(1, self.edge_blend_lvls))
 
         # ===== 7) Дефриндж зелени =====
         k3 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(3,3))
@@ -147,11 +156,19 @@ class GenPipeline:
         rim = rim * (nohand.astype(np.float32))
         mul = 1.0 - shade_k * rim[:, :, None]
         init = np.clip(init.astype(np.float32) * mul, 0, 255).astype(np.uint8)
+        # Анти‑спилл: прижимаем зелёный канал на узкой кромке карточки
+        if self.despill_gain < 0.999:
+            band2 = cv2.morphologyEx(mask_poly, cv2.MORPH_GRADIENT, cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(3,3)))
+            if band2.max() > 0:
+                b,g,r = cv2.split(init)
+                mx = cv2.max(r,b)
+                g = np.where(band2>0, np.minimum(g, (mx.astype(np.float32)*self.despill_gain).astype(np.uint8)), g)
+                init = cv2.merge([b,g,r])
 
         mask_edge = np.clip(edge_narrow.astype(np.uint8) | (contact_alpha*255).astype(np.uint8), 0, 255)
         _, mask_edge = cv2.threshold(mask_edge, 1, 255, cv2.THRESH_BINARY)
 
-        if self.seamless_edge:
+        if self.seamless_edge and not self.card_hard_edge:
             ys, xs = np.where(mask_poly > 0)
             if len(xs) > 0:
                 center = (int(xs.mean()), int(ys.mean()))
