@@ -44,7 +44,7 @@ services:
       SEAMLESS_EDGE: "1"               # локальный Poisson по кромке карты (gen/pipeline.py)
       CARD_HARD_EDGE: "1"              # жёсткая кромка карточки без мутной маски (gen/pipeline.py)
       EDGE_BLEND_LEVELS: "3"           # уровни Laplacian‑blend, если CARD_HARD_EDGE=0 (gen/pipeline.py)
-      DESPILL_GAIN: "0.85"             # прижать зелёный по кромке (gen/pipeline.py)
+      DESPILL_GAIN: "0.80"             # прижать зелёный по кромке (gen/pipeline.py)
 
       # Детали кожи/зерно
       FINGER_DETAIL_SIGMA: "1.1"       # детализация кожи (gen/utils/utils.py: texture_reinject)
@@ -69,23 +69,23 @@ services:
       SWAP_EAR_ITERS: "3"              # кол-во дилатаций ушей (face_swapper.py)
       SWAP_EAR_RECT_W: "24"            # «карманы» по бокам bbox (face_swapper.py)
       SWAP_HAIR_EXPAND_PX: "20"        # расширение вверх (волосы) (face_swapper.py)
-      SWAP_CHIN_CUT_PX: "6"            # обрез снизу по подбородку (face_swapper.py)
+      SWAP_CHIN_CUT_PX: "8"            # обрез снизу по подбородку (face_swapper.py)
       POISSON_FACE: "1"                # узкий Poisson по границе (face_swapper.py)
       SWAP_POISSON_FULL: "1"           # полноразмерный Poisson по ext_mask (face_swapper.py)
-      SWAP_SHARP_GAIN: "0.20"          # лёгкая резкость после свопа (face_swapper.py)
+      SWAP_SHARP_GAIN: "0.16"          # лёгкая резкость после свопа (face_swapper.py)
       FACE_MODEL_PATH: "/models/inswapper_128.onnx" # путь к ONNX‑модели inswapper (face_swapper.py)
       DISABLE_HANDS: "0"               # выключить распознавание рук (gen/utils/utils.py)
       DISABLE_FACEMESH: "0"            # выключить FaceMesh (face_swapper.py)
       SWAP_KEEP_EARS: "1"              # оставить уши таргета (естественнее на большинстве кадров)
       SWAP_CORE_SHRINK_PX: "6"         # сужение «ядра» при KEEP_EARS (face_swapper.py)
       HAND_SKIN_UNION: "1"             # объединять маску рук с skin‑mask (gen/utils/utils.py: hand_mask_bgr)
-      HAND_DILATE_PX: "10"              # расширить маску руки (hand_mask_bgr)
+      HAND_DILATE_PX: "12"              # расширить маску руки (hand_mask_bgr)
       HAND_ERODE_PX: "2"                # затем чуть усадить (hand_mask_bgr)
-      CONTACT_FEATHER: "3.0"            # перо контактной тени (gen/pipeline.py)
-      CONTACT_SHADE: "0.14"             # сила контактной тени (gen/pipeline.py)
+      CONTACT_FEATHER: "3.4"            # перо контактной тени (gen/pipeline.py)
+      CONTACT_SHADE: "0.16"             # сила контактной тени (gen/pipeline.py)
       # волосы источника (опционально)
       HAIR_FROM_SRC: "0"                # подмешивать волосы источника (face_swapper.py)
-      SWAP_DETAIL_GAIN: "0.18"          # реинжект высоких частот (face_swapper.py)
+      SWAP_DETAIL_GAIN: "0.14"          # реинжект высоких частот (face_swapper.py)
       SWAP_DETAIL_SIGMA: "0.9"          # размер «пор» для деталей (face_swapper.py)
       SWAP_FORCE_EARS: "0"              # не принуждать Poisson ушей при KEEP_EARS=1
       SWAP_EAR_HARD: "0"                # не заменяем уши (оставляем таргет)
@@ -111,9 +111,9 @@ services:
       # усиление заметности свопа
       SWAP_CORE_GAIN: "1.5"            # усиление «ядра» (face_swapper.py)
       SWAP_HAIR_ALPHA: "1"             # сила волос (face_swapper.py)
-      SWAP_CORE_DILATE: "9"            # ширина «ядра» (face_swapper.py)
+      SWAP_CORE_DILATE: "7"            # ширина «ядра» (face_swapper.py)
       SWAP_ENFORCE_CORE: "1"           # закрепить ядро после Poisson (face_swapper.py)
-      SWAP_CORE_FEATHER: "3.0"         # перо при закреплении ядра (face_swapper.py)
+      SWAP_CORE_FEATHER: "3.4"         # перо при закреплении ядра (face_swapper.py)
 
       # отладка
       SWAP_DEBUG: "1"
