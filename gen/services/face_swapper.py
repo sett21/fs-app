@@ -107,6 +107,11 @@ class FaceSwapper:
         self.swap_select = os.getenv("SWAP_SELECT", "largest").strip().lower()
         self.swap_index = max(0, int(os.getenv("SWAP_INDEX", "0")))
         self.force_full_overlay = os.getenv("SWAP_FORCE_FULL", "0") == "1"
+        # Тон‑матч смешение: 1.0 = только matched, 0.0 = только rough
+        try:
+            self.tonematch_gain = float(os.getenv("SWAP_TONEMATCH_GAIN", "1.0"))
+        except Exception:
+            self.tonematch_gain = 1.0
         # Режим: сохранять уши таргета (меняем только ядро лица)
         self.keep_ears = os.getenv("SWAP_KEEP_EARS", "0") == "1"
         self.core_shrink_px = int(os.getenv("SWAP_CORE_SHRINK_PX", "4"))
@@ -122,6 +127,13 @@ class FaceSwapper:
         self.ear_clone_mode = os.getenv("SWAP_EAR_CLONE_MODE", "normal").strip().lower()
         self.ear_erode = max(0, int(os.getenv("SWAP_EAR_ERODE", "2")))
         self.ear_min_area = max(50, int(os.getenv("SWAP_EAR_MIN_AREA", "300")))
+        # Dehalo по краю уха (мягкое притягивание к таргету)
+        self.ear_dehalo = os.getenv("SWAP_EAR_DEHALO", "1") == "1"
+        try:
+            self.ear_dehalo_gain = float(os.getenv("SWAP_EAR_DEHALO_GAIN", "0.22"))
+            self.ear_dehalo_sigma = float(os.getenv("SWAP_EAR_DEHALO_SIGMA", "1.6"))
+        except Exception:
+            self.ear_dehalo_gain, self.ear_dehalo_sigma = 0.22, 1.6
         # Fallback-маска, если FaceMesh дал смещение/пусто
         try:
             self.bbox_pad_pct = float(os.getenv("SWAP_BBOX_OVAL_PAD_PCT", "0.12"))
@@ -461,7 +473,14 @@ class FaceSwapper:
         ext_mask = self._extended_mask(base_mask, chin_y, bbox=tar.bbox)
         matched = self._reinhard_to_ref(rough, target_bgr, ext_mask)
 
-        out = matched
+        # Смешиваем rough и matched для большей похожести на rough
+        if 0.0 <= self.tonematch_gain < 1.0:
+            m01 = (ext_mask.astype(np.float32) / 255.0)[:, :, None]
+            mix = self.tonematch_gain
+            blend = matched.astype(np.float32) * mix + rough.astype(np.float32) * (1.0 - mix)
+            out = (blend * m01 + target_bgr.astype(np.float32) * (1.0 - m01)).astype(np.uint8)
+        else:
+            out = matched
         # Жёстко заменить уши: (отключаем, если keep_ears)
         if self.ear_hard and not self.keep_ears:
             try:
@@ -582,6 +601,20 @@ class FaceSwapper:
 
         if glasses_a.max() > 0:
             out = (target_bgr.astype(np.float32) * glasses_a + out.astype(np.float32) * (1 - glasses_a)).astype(np.uint8)
+
+        # Мягкий dehalo по краю уха: притягиваем край к таргету
+        if self.ear_dehalo and not self.keep_ears:
+            try:
+                k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (self.core_dilate, self.core_dilate))
+                core = cv2.dilate(base_mask, k, 1)
+                ear_only = cv2.subtract(ext_mask, core)
+                band = cv2.morphologyEx(ear_only, cv2.MORPH_GRADIENT, cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(3,3)))
+                if band.max() > 0 and self.ear_dehalo_gain > 0:
+                    a = cv2.GaussianBlur(band, (0,0), max(0.1, self.ear_dehalo_sigma)).astype(np.float32) / 255.0
+                    a = (a * float(self.ear_dehalo_gain))[:, :, None]
+                    out = (target_bgr.astype(np.float32) * a + out.astype(np.float32) * (1.0 - a)).astype(np.uint8)
+            except Exception:
+                pass
 
         diff1 = float(np.mean(np.abs(out.astype(np.float32) - target_bgr.astype(np.float32))))
         print(f"[faceswap] final Δ={diff1:.2f}", flush=True)
