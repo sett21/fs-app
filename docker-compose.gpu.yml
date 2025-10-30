@@ -42,6 +42,9 @@ services:
       EDGE_SNAP_ITERS: "3"             # уточнение альфы по краям (gen/utils/utils.py: refine_alpha_with_edges)
       RIM_SHADE: "0.245"               # затемнение у кромки (gen/pipeline.py)
       SEAMLESS_EDGE: "1"               # локальный Poisson по кромке карты (gen/pipeline.py)
+      CARD_HARD_EDGE: "1"              # жёсткая кромка карточки без мутной маски (gen/pipeline.py)
+      EDGE_BLEND_LEVELS: "3"           # уровни Laplacian‑blend, если CARD_HARD_EDGE=0 (gen/pipeline.py)
+      DESPILL_GAIN: "0.85"             # прижать зелёный по кромке (gen/pipeline.py)
 
       # Детали кожи/зерно
       FINGER_DETAIL_SIGMA: "1.1"       # детализация кожи (gen/utils/utils.py: texture_reinject)
