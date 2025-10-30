@@ -116,7 +116,8 @@ class GenPipeline:
         alpha_edge = (edge_grad[:, :, None] * (nohand[:, :, None]/255.0)).astype(np.float32)
         alpha_edge = np.clip(alpha_edge * 0.8, 0, 1)
         if self.card_hard_edge:
-            hard = (mask_poly > 0).astype(np.float32)
+            # Композит карты только там, где нет руки
+            hard = ( (mask_poly > 0).astype(np.uint8) & nohand ).astype(np.float32)
             hard = cv2.GaussianBlur(hard, (0,0), 0.6)
             init = (overlay.astype(np.float32)*hard[:, :, None] + init.astype(np.float32)*(1-hard[:, :, None])).astype(np.uint8)
         else:
@@ -156,9 +157,10 @@ class GenPipeline:
         rim = rim * (nohand.astype(np.float32))
         mul = 1.0 - shade_k * rim[:, :, None]
         init = np.clip(init.astype(np.float32) * mul, 0, 255).astype(np.uint8)
-        # Анти‑спилл: прижимаем зелёный канал на узкой кромке карточки
+        # Анти‑спилл: прижимаем зелёный канал на узкой кромке карточки (только вне руки)
         if self.despill_gain < 0.999:
             band2 = cv2.morphologyEx(mask_poly, cv2.MORPH_GRADIENT, cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(3,3)))
+            band2 = cv2.bitwise_and(band2, nohand)
             if band2.max() > 0:
                 b,g,r = cv2.split(init)
                 mx = cv2.max(r,b)
