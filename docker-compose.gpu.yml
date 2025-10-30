@@ -27,9 +27,9 @@ services:
       INPAINT_REPO: "runwayml/stable-diffusion-inpainting"  # какой SD inpaint (gen/services/inpainter.py)
       TORCH_dtype: "fp16"            # fp16/fp32/CPU логика в Inpainter (gen/services/inpainter.py)
       MAX_SIDE: "1600"               # ограничение размера входов (gen/pipeline.py)
-      STEPS: "22"                     # num_inference_steps (gen/services/inpainter.py)
-      GUIDANCE: "4.0"                 # guidance_scale (gen/services/inpainter.py)
-      STRENGTH: "0.46"               # denoise strength (gen/services/inpainter.py)
+      STEPS: "32"                     # num_inference_steps (gen/services/inpainter.py)
+      GUIDANCE: "6.0"                 # guidance_scale (gen/services/inpainter.py)
+      STRENGTH: "0.66"               # denoise strength (gen/services/inpainter.py)
 
       # Патч-инпейнт
       INPAINT_LONG: "1400"            # длинная сторона патча для SD (gen/pipeline.py)
@@ -72,7 +72,7 @@ services:
       SWAP_CHIN_CUT_PX: "8"            # обрез снизу по подбородку (face_swapper.py)
       POISSON_FACE: "1"                # узкий Poisson по границе (face_swapper.py)
       SWAP_POISSON_FULL: "1"           # полноразмерный Poisson по ext_mask (face_swapper.py)
-      SWAP_SHARP_GAIN: "0.16"          # лёгкая резкость после свопа (face_swapper.py)
+      SWAP_SHARP_GAIN: "0.18"          # лёгкая резкость после свопа (face_swapper.py)
       FACE_MODEL_PATH: "/models/inswapper_128.onnx" # путь к ONNX‑модели inswapper (face_swapper.py)
       DISABLE_HANDS: "0"               # выключить распознавание рук (gen/utils/utils.py)
       DISABLE_FACEMESH: "0"            # выключить FaceMesh (face_swapper.py)
@@ -85,7 +85,7 @@ services:
       CONTACT_SHADE: "0.16"             # сила контактной тени (gen/pipeline.py)
       # волосы источника (опционально)
       HAIR_FROM_SRC: "0"                # подмешивать волосы источника (face_swapper.py)
-      SWAP_DETAIL_GAIN: "0.14"          # реинжект высоких частот (face_swapper.py)
+      SWAP_DETAIL_GAIN: "0.16"          # реинжект высоких частот (face_swapper.py)
       SWAP_DETAIL_SIGMA: "0.9"          # размер «пор» для деталей (face_swapper.py)
       SWAP_FORCE_EARS: "0"              # не принуждать Poisson ушей при KEEP_EARS=1
       SWAP_EAR_HARD: "0"                # не заменяем уши (оставляем таргет)
@@ -111,9 +111,9 @@ services:
       # усиление заметности свопа
       SWAP_CORE_GAIN: "1.5"            # усиление «ядра» (face_swapper.py)
       SWAP_HAIR_ALPHA: "1"             # сила волос (face_swapper.py)
-      SWAP_CORE_DILATE: "7"            # ширина «ядра» (face_swapper.py)
+      SWAP_CORE_DILATE: "8"            # ширина «ядра» (face_swapper.py)
       SWAP_ENFORCE_CORE: "1"           # закрепить ядро после Poisson (face_swapper.py)
-      SWAP_CORE_FEATHER: "3.4"         # перо при закреплении ядра (face_swapper.py)
+      SWAP_CORE_FEATHER: "3.2"         # перо при закреплении ядра (face_swapper.py)
 
       # отладка
       SWAP_DEBUG: "1"
