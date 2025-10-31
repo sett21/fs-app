@@ -61,7 +61,7 @@ services:
       # Faceswap
       DISABLE_FACE_SWAP: "0"           # полностью отключить своп (gen/pipeline.py)
       SWAP_MODE: "after"               # before/after относит. компоновки (gen/pipeline.py)
-      SWAP_ENFORCE_FINAL: "1"          # дополнительный финальный своп (gen/pipeline.py)
+      SWAP_ENFORCE_FINAL: "0"          # дополнительный финальный своп (gen/pipeline.py)
       INSIGHTFACE_DET_SIZE: "640"      # размер детектора лиц (gen/services/face_swapper.py)
       INSIGHTFACE_DET_THRESH: "0.25"   # порог детектора лиц (face_swapper.py)
       SWAP_EAR_EXPAND_PX: "36"         # баз. расширение по X для ушей (face_swapper.py: _extended_mask)
