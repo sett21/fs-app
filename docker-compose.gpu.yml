@@ -84,6 +84,7 @@ services:
       CONTACT_FEATHER: "3.4"            # перо контактной тени (gen/pipeline.py)
       CONTACT_SHADE: "0.16"             # сила контактной тени (gen/pipeline.py)
       SWAP_TONEMATCH_GAIN: "0.15"
+      SWAP_MOUTH_SOFTEN: "1"
       # волосы источника (опционально)
       HAIR_FROM_SRC: "0"                # подмешивать волосы источника (face_swapper.py)
       SWAP_DETAIL_GAIN: "0.16"          # реинжект высоких частот (face_swapper.py)
@@ -98,6 +99,15 @@ services:
       HAIR_ALPHA: "0.3"                 # сила волос источника (face_swapper.py)
       SWAP_FORCE_FULL: "0"              # вернуть сырой swap без маски (face_swapper.py)
       SWAP_BBOX_OVAL_PAD_PCT: "0.12"    # поля овала при bbox‑fallback маски (face_swapper.py)
+      # Тон‑матч и сглаживание артефактов лица
+      SWAP_TONEMATCH_GAIN: "0.20"       # 0.0=rough, 1.0=matched (face_swapper.py)
+      SWAP_MOUTH_SOFTEN: "1"            # смягчить зону губ (face_swapper.py)
+      SWAP_MOUTH_BAND_PX: "6"           # ширина полосы для губ (px) (face_swapper.py)
+      SWAP_MOUTH_BLEND: "0.35"          # сила подмешивания таргета в зоне губ (face_swapper.py)
+      # Dehalo по краю уха (актуально если переносим уши источника)
+      SWAP_EAR_DEHALO: "1"              # включить dehalo ушей (face_swapper.py)
+      SWAP_EAR_DEHALO_GAIN: "0.25"      # сила притяжения края к таргету (face_swapper.py)
+      SWAP_EAR_DEHALO_SIGMA: "1.6"      # перо dehalo (face_swapper.py)
 
       # Отладка
       SAVE_DEBUG: "1"                   # сохранять debug_* в /tmp (сервисы и API)

@@ -15,6 +15,8 @@ _FACE_OVAL = [
     162, 21, 54, 103, 67, 109, 10,
 ]
 _FACE_CHIN_IDX = 152  # подбородок (FaceMesh)
+# FaceMesh: внешний контур губ (468‑точечная разметка)
+_LIPS_OUTER = [61,146,91,181,84,17,314,405,321,375,291]
 
 
 def _ellipse_kernel(rx: int, ry: int) -> np.ndarray:
@@ -112,6 +114,13 @@ class FaceSwapper:
             self.tonematch_gain = float(os.getenv("SWAP_TONEMATCH_GAIN", "1.0"))
         except Exception:
             self.tonematch_gain = 1.0
+        # Смягчение области губ (убрать «двойные» границы/усы)
+        self.mouth_soften = os.getenv("SWAP_MOUTH_SOFTEN", "1") == "1"
+        try:
+            self.mouth_band_px = int(os.getenv("SWAP_MOUTH_BAND_PX", "6"))
+            self.mouth_blend   = float(os.getenv("SWAP_MOUTH_BLEND", "0.35"))
+        except Exception:
+            self.mouth_band_px, self.mouth_blend = 6, 0.35
         # Режим: сохранять уши таргета (меняем только ядро лица)
         self.keep_ears = os.getenv("SWAP_KEEP_EARS", "0") == "1"
         self.core_shrink_px = int(os.getenv("SWAP_CORE_SHRINK_PX", "4"))
@@ -293,6 +302,26 @@ class FaceSwapper:
         pts = np.array([[int(lm.landmark[i].x * w), int(lm.landmark[i].y * h)] for i in _FACE_OVAL], np.int32)
         cv2.fillConvexPoly(mask, pts, 255)
         return mask, chin_y
+
+    def _mouth_band_mask(self, bgr: np.ndarray, px: int):
+        h, w = bgr.shape[:2]
+        m = np.zeros((h, w), np.uint8)
+        if self.fm is None:
+            return m
+        try:
+            res = self.fm.process(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB))
+        except Exception:
+            return m
+        if not res or not res.multi_face_landmarks:
+            return m
+        lm = res.multi_face_landmarks[0]
+        pts = np.array([[int(lm.landmark[i].x*w), int(lm.landmark[i].y*h)] for i in _LIPS_OUTER], np.int32)
+        if pts.shape[0] >= 3:
+            cv2.fillConvexPoly(m, pts, 255)
+            k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (px*2+1, px*2+1))
+            band = cv2.dilate(m, k, 1)
+            return band
+        return m
 
     def _bbox_oval_mask(self, shape_hw, bbox):
         h, w = shape_hw
@@ -525,6 +554,14 @@ class FaceSwapper:
                 out = texture_reinject(out, target_bgr, m01, sigma=det_sigma, gain=det_gain)
         except Exception:
             pass
+
+        # Смягчение зоны губ — смешиваем с таргетом в узкой полосе
+        if self.mouth_soften and self.mouth_blend > 0:
+            band = self._mouth_band_mask(out, max(2, self.mouth_band_px))
+            if band.max() > 0:
+                a = cv2.GaussianBlur(band, (0,0), 1.2).astype(np.float32)/255.0
+                a = (a * float(self.mouth_blend))[:, :, None]
+                out = (target_bgr.astype(np.float32) * a + out.astype(np.float32) * (1.0 - a)).astype(np.uint8)
 
         use_poisson_full = (self.poisson_full and not self.keep_ears)
         if use_poisson_full:
