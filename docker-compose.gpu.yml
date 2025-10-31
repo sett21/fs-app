@@ -83,8 +83,6 @@ services:
       HAND_ERODE_PX: "2"                # затем чуть усадить (hand_mask_bgr)
       CONTACT_FEATHER: "3.4"            # перо контактной тени (gen/pipeline.py)
       CONTACT_SHADE: "0.16"             # сила контактной тени (gen/pipeline.py)
-      SWAP_TONEMATCH_GAIN: "0.15"
-      SWAP_MOUTH_SOFTEN: "1"
       # волосы источника (опционально)
       HAIR_FROM_SRC: "0"                # подмешивать волосы источника (face_swapper.py)
       SWAP_DETAIL_GAIN: "0.16"          # реинжект высоких частот (face_swapper.py)
