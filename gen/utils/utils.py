@@ -251,6 +251,34 @@ def get_mp_hands():
         )
     return _mp_hands
 
+def _draw_hand_bones_mask(h: int, w: int, hand_lm, thick_px: int = 10, include_palm: bool = True) -> np.ndarray:
+    m = np.zeros((h, w), np.uint8)
+    # Mediapipe Hands indices
+    fingers = [
+        [0,1,2,3,4],        # thumb
+        [0,5,6,7,8],        # index
+        [0,9,10,11,12],     # middle
+        [0,13,14,15,16],    # ring
+        [0,17,18,19,20],    # pinky
+    ]
+    pts_all = []
+    for lm in hand_lm.landmark:
+        pts_all.append((lm.x, lm.y))
+    pts_px = [(int(x*w), int(y*h)) for x,y in pts_all]
+    t = max(2, int(thick_px))
+    for chain in fingers:
+        for i in range(len(chain)-1):
+            p0 = pts_px[chain[i]]
+            p1 = pts_px[chain[i+1]]
+            cv2.line(m, p0, p1, 255, thickness=t, lineType=cv2.LINE_AA)
+            cv2.circle(m, p0, t//2, 255, -1)
+            cv2.circle(m, p1, t//2, 255, -1)
+    if include_palm:
+        hull_idx = [0,1,5,9,13,17]
+        hull = np.array([pts_px[i] for i in hull_idx], np.int32)
+        cv2.fillConvexPoly(m, hull, 255)
+    return m
+
 def hand_mask_bgr(bgr: np.ndarray) -> np.ndarray:
     h, w = bgr.shape[:2]
     if os.getenv("DISABLE_HANDS", "0") == "1":
@@ -266,12 +294,18 @@ def hand_mask_bgr(bgr: np.ndarray) -> np.ndarray:
     mask = np.zeros((h, w), np.uint8)
     if not res or not res.multi_hand_landmarks:
         return mask
+    mode = os.getenv("HAND_MASK_MODE", "bones").strip().lower()
+    thick = int(os.getenv("HAND_THICK_PX", "10"))
+    include_palm = os.getenv("HAND_INCLUDE_PALM", "1") == "1"
     for hand in res.multi_hand_landmarks:
-        pts = np.array([[int(lm.x*w), int(lm.y*h)] for lm in hand.landmark], np.int32)
-        if pts.shape[0] >= 3:
-            hull = cv2.convexHull(pts)
-            cv2.fillConvexPoly(mask, hull, 255)
-    # Усиление маски за счёт кожи (безопасно, т.к. позже пересекается с полигоном)
+        if mode == "bones":
+            mask = cv2.bitwise_or(mask, _draw_hand_bones_mask(h, w, hand, thick_px=thick, include_palm=include_palm))
+        else:
+            pts = np.array([[int(lm.x*w), int(lm.y*h)] for lm in hand.landmark], np.int32)
+            if pts.shape[0] >= 3:
+                hull = cv2.convexHull(pts)
+                cv2.fillConvexPoly(mask, hull, 255)
+    # Усиление маски за счёт кожи (безопасно: позднее пересекается с полигоном)
     try:
         if os.getenv("HAND_SKIN_UNION", "1") == "1":
             skin = skin_mask(bgr)
