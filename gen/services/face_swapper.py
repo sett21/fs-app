@@ -143,6 +143,17 @@ class FaceSwapper:
             self.ear_dehalo_sigma = float(os.getenv("SWAP_EAR_DEHALO_SIGMA", "1.6"))
         except Exception:
             self.ear_dehalo_gain, self.ear_dehalo_sigma = 0.22, 1.6
+        # Очки/резкие края вокруг глаз: по умолчанию отключаем сильное подмешивание таргета
+        try:
+            self.glasses_alpha = float(os.getenv("SWAP_GLASSES_ALPHA", "0.0"))
+        except Exception:
+            self.glasses_alpha = 0.0
+        # Исключать область рта из реинжекта высоких частот (убирает «двойные» усы/губы)
+        self.detail_exclude_mouth = os.getenv("SWAP_DETAIL_EXCLUDE_MOUTH", "1") == "1"
+        try:
+            self.detail_mouth_scale = float(os.getenv("SWAP_DETAIL_MOUTH_SCALE", "0.2"))
+        except Exception:
+            self.detail_mouth_scale = 0.2
         # Fallback-маска, если FaceMesh дал смещение/пусто
         try:
             self.bbox_pad_pct = float(os.getenv("SWAP_BBOX_OVAL_PAD_PCT", "0.12"))
@@ -542,7 +553,9 @@ class FaceSwapper:
         edges = cv2.dilate(edges, cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)), 1)
         glasses_mask = cv2.bitwise_and(edges, base_mask)
         glasses_mask = cv2.GaussianBlur(glasses_mask, (0, 0), 1.2)
-        glasses_a = (glasses_mask.astype(np.float32) / 255.0)[:, :, None] * 0.85
+        # Управляемая сила возврата таргета по «очкам». 0 — отключено
+        ga = max(0.0, float(self.glasses_alpha))
+        glasses_a = (glasses_mask.astype(np.float32) / 255.0)[:, :, None] * ga
 
         out = self._unsharp(out, sigma=0.8, amount=self.swap_sharp_gain)
         # Подмешиваем высокочастотные детали таргета, чтобы убрать «пластик» и швы
@@ -551,6 +564,15 @@ class FaceSwapper:
             det_sigma = float(os.getenv("SWAP_DETAIL_SIGMA", "0.9"))
             if det_gain > 0:
                 m01 = (ext_mask.astype(np.float32) / 255.0)
+                # В зоне рта ослабляем реинжект, чтобы не появлялись «усы/двойные губы»
+                if self.detail_exclude_mouth and self.mouth_band_px > 0 and self.fm is not None:
+                    try:
+                        band = self._mouth_band_mask(rough, max(2, self.mouth_band_px))
+                        if band is not None and band.max() > 0:
+                            a = cv2.GaussianBlur(band, (0,0), 1.2).astype(np.float32)/255.0
+                            m01 = np.clip(m01 * (1.0 - a * float(self.detail_mouth_scale)), 0.0, 1.0)
+                    except Exception:
+                        pass
                 out = texture_reinject(out, target_bgr, m01, sigma=det_sigma, gain=det_gain)
         except Exception:
             pass
